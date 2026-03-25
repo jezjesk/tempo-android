@@ -22,7 +22,7 @@ class TempoApplication : Application() {
         super.onCreate()
         val sessionTs = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
         SparkLogger.init(this, sessionTs)
-        CsvLogger.initialize(this, sessionTs)
+        CsvLogger.initialize(this)
         AppSettings.init(this)
         SparkLogger.i("Application", "TempoApplication.onCreate — app process started")
     }
