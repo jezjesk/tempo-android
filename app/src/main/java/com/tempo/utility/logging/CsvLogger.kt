@@ -13,16 +13,14 @@ import java.util.Locale
  * File name: spark_offers_<sessionTimestamp>.csv
  * Location:  /storage/emulated/0/Android/data/com.tempo.utility/files/
  *
- * Each app session (process start) creates its own file so runs are never mixed.
- * The session timestamp is shared with SparkLogger so log and CSV files can be
- * matched by their suffix, e.g.:
- *   tempo_2026-03-25_09-53-29.log
- *   spark_offers_2026-03-25_09-53-29.csv
+ * A single persistent file is used across all sessions. The file is only created
+ * (with header) if it does not already exist; subsequent app starts append to it.
  *
- * Columns (18):
+ * Columns (19):
  *   Timestamp, EstimatedTotal, DeliveryPay, ExtraEarnings, TipPay,
  *   DistanceMi, TimeMin,
- *   CAMin     = ((EstimatedTotal−TipPay)/60×TimeMin + 0.3×DistanceMi)
+ *   RealMin   = TimeMin + DistanceMi×2
+ *   CAMin     = 16.9×1.2/60×TimeMin + 0.3×DistanceMi  (CA Prop 22)
  *   SparkPay  = MAX(CAMin, EstimatedTotal−TipPay)
  *   TotalPay  = SparkPay + TipPay
  *   PayHourly = (TotalPay/TimeMin)×60
@@ -36,9 +34,9 @@ object CsvLogger {
     private const val TAG = "CsvLogger"
 
     private val HEADER = "Timestamp,EstimatedTotal,DeliveryPay,ExtraEarnings,TipPay," +
-          "DistanceMi,TimeMin,CAMin,SparkPay,TotalPay," +
+          "DistanceMi,TimeMin,RealMin,CAMin,SparkPay,TotalPay," +
           "PayHourly,TipHourly,DollarsPerMile," +
-          "PickupType,OfferType,PickupStore\n"
+          "PickupType,OfferType,PickupStore,CriteriaResult,ActionResult\n"
 
     private val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
@@ -50,11 +48,15 @@ object CsvLogger {
      * @param sessionTimestamp  Timestamp suffix shared with SparkLogger, e.g.
      *                          "2026-03-25_09-53-29".
      */
-    fun initialize(context: Context, sessionTimestamp: String) {
+    fun initialize(context: Context) {
         val dir  = context.getExternalFilesDir(null) ?: context.filesDir
-        val file = File(dir, "spark_offers_$sessionTimestamp.csv")
-        file.writeText(HEADER)
-        SparkLogger.i(TAG, "Created CSV at ${file.absolutePath}")
+        val file = File(dir, "spark_offers.csv")
+        if (!file.exists()) {
+            file.writeText(HEADER)
+            SparkLogger.i(TAG, "Created new CSV at ${file.absolutePath}")
+        } else {
+            SparkLogger.i(TAG, "Appending to existing CSV at ${file.absolutePath}")
+        }
         csvFile = file
     }
 
@@ -71,6 +73,7 @@ object CsvLogger {
           append(String.format("%.2f", details.tipPay)); append(",")
           append(details.distanceMiles?.let { String.format("%.2f", it) } ?: ""); append(",")
           append(String.format("%.1f", details.timeMinutes)); append(",")
+          append(String.format("%.2f", details.realMin)); append(",")
           append(String.format("%.2f", details.caMin)); append(",")
           append(String.format("%.2f", details.sparkPay)); append(",")
           append(String.format("%.2f", details.totalPay)); append(",")
