@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tempo</string>
+    <string name="accessibility_service_label">Tempo Background Service</string>
+    <string name="accessibility_service_description">Tempo monitors the Spark Driver app for delivery offers. When an offer appears, it automatically opens the details and shows you the hourly rate so you can decide quickly.</string>
+    <string name="enable_service">Enable Accessibility Service</string>
+    <string name="service_active">Service Active</string>
+    <string name="service_inactive">Service Inactive</string>
+    <string name="overlay_permission_needed">Overlay Permission Needed</string>
+    <string name="grant_overlay">Grant Overlay Permission</string>
+    <string name="status_waiting">Waiting for Spark offer…</string>
+    <string name="status_offer_found">Offer found! Opening details…</string>
+    <string name="hourly_tip_label">Hourly Tip Rate</string>
+    <string name="overlay_dismiss">Dismiss</string>
+</resources>

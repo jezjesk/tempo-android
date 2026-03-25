@@ -1,0 +1,132 @@
+package com.tempo.utility.logging
+
+import android.content.Context
+import com.tempo.utility.service.OfferDetails
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/**
+ * CsvLogger — writes one row per offer to a timestamped CSV file per app session.
+ *
+ * File name: spark_offers_<sessionTimestamp>.csv
+ * Location:  /storage/emulated/0/Android/data/com.tempo.utility/files/
+ *
+ * Each app session (process start) creates its own file so runs are never mixed.
+ * The session timestamp is shared with SparkLogger so log and CSV files can be
+ * matched by their suffix, e.g.:
+ *   tempo_2026-03-25_09-53-29.log
+ *   spark_offers_2026-03-25_09-53-29.csv
+ *
+ * Columns (18):
+ *   Timestamp, EstimatedTotal, DeliveryPay, ExtraEarnings, TipPay,
+ *   DistanceMi, TimeMin,
+ *   CAMin     = ((EstimatedTotal−TipPay)/60×TimeMin + 0.3×DistanceMi)
+ *   SparkPay  = MAX(CAMin, EstimatedTotal−TipPay)
+ *   TotalPay  = SparkPay + TipPay
+ *   PayHourly = (TotalPay/TimeMin)×60
+ *   TipHourly = (TipPay/TimeMin)×60
+ *   DollarsPerMile = TotalPay/DistanceMi
+ *   PickupType, OfferType, PickupStore,
+ *   CriteriaResult (PASS|FAIL), ActionResult (PENDING→ACCEPTED|REJECTED|ACCEPT_UNAVAILABLE|ACCEPT_EXPIRED|ACCEPT_TIMEOUT|REJECT_EXPIRED|REJECT_TIMEOUT)
+ */
+object CsvLogger {
+
+    private const val TAG = "CsvLogger"
+
+    private val HEADER = "Timestamp,EstimatedTotal,DeliveryPay,ExtraEarnings,TipPay," +
+          "DistanceMi,TimeMin,CAMin,SparkPay,TotalPay," +
+          "PayHourly,TipHourly,DollarsPerMile," +
+          "PickupType,OfferType,PickupStore\n"
+
+    private val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+
+    private var csvFile: File? = null
+
+    /**
+     * Initialise for this app session.
+     *
+     * @param sessionTimestamp  Timestamp suffix shared with SparkLogger, e.g.
+     *                          "2026-03-25_09-53-29".
+     */
+    fun initialize(context: Context, sessionTimestamp: String) {
+        val dir  = context.getExternalFilesDir(null) ?: context.filesDir
+        val file = File(dir, "spark_offers_$sessionTimestamp.csv")
+        file.writeText(HEADER)
+        SparkLogger.i(TAG, "Created CSV at ${file.absolutePath}")
+        csvFile = file
+    }
+
+    fun append(details: OfferDetails, criteriaResult: String, actionResult: String = "PENDING") {
+        val file = csvFile ?: run {
+          SparkLogger.e(TAG, "append: CsvLogger not initialized")
+          return
+        }
+        val row = buildString {
+          append(ts.format(Date())); append(",")
+          append(details.estimatedPayDollars?.let { String.format("%.2f", it) } ?: ""); append(",")
+          append(details.deliveryPay?.let  { String.format("%.2f", it) } ?: ""); append(",")
+          append(String.format("%.2f", details.extraEarnings ?: 0.0)); append(",")
+          append(String.format("%.2f", details.tipPay)); append(",")
+          append(details.distanceMiles?.let { String.format("%.2f", it) } ?: ""); append(",")
+          append(String.format("%.1f", details.timeMinutes)); append(",")
+          append(String.format("%.2f", details.caMin)); append(",")
+          append(String.format("%.2f", details.sparkPay)); append(",")
+          append(String.format("%.2f", details.totalPay)); append(",")
+          append(String.format("%.2f", details.payHourly)); append(",")
+          append(String.format("%.2f", details.tipHourly)); append(",")
+          append(String.format("%.2f", details.dollarsPerMile)); append(",")
+          append(csvQuote(details.pickupType ?: "")); append(",")
+          append(details.offerType); append(",")
+          append(csvQuote(details.pickupStore ?: "")); append(",")
+          append(criteriaResult); append(",")
+          append(actionResult)
+          append("\n")
+        }
+        try {
+          file.appendText(row)
+          SparkLogger.i(TAG, "Recorded offer → $row".trimEnd())
+        } catch (e: Exception) {
+          SparkLogger.e(TAG, "append: failed to write row", e)
+        }
+    }
+
+    /**
+       * Updates the ActionResult field of the most recently written CSV row.
+       * Called once the accept/reject outcome is confirmed so the row reflects
+       * what actually happened rather than the initial PENDING placeholder.
+       */
+    fun updateLastActionResult(result: String) {
+        val file = csvFile ?: return
+        try {
+            val content = file.readText()
+            // Trim trailing newlines, find the last row
+            val trimmed   = content.trimEnd('\n')
+            val lastNl    = trimmed.lastIndexOf('\n')
+            if (lastNl < 0) return
+            val lastRow   = trimmed.substring(lastNl + 1)
+            if (lastRow.startsWith("Timestamp")) return  // header only — no data yet
+            // Replace everything after the last comma (the ActionResult field)
+            val lastComma = lastRow.lastIndexOf(',')
+            if (lastComma < 0) return
+            val updatedRow  = lastRow.substring(0, lastComma + 1) + result
+            val newContent  = trimmed.substring(0, lastNl + 1) + updatedRow + "\n"
+            file.writeText(newContent)
+            SparkLogger.i(TAG, "updateLastActionResult: ActionResult=$result")
+        } catch (e: Exception) {
+            SparkLogger.e(TAG, "updateLastActionResult: failed", e)
+        }
+      }
+
+    fun getFile(): File? = csvFile
+
+    private fun csvQuote(value: String): String {
+        if (value.isEmpty()) return value
+        return if (value.contains(',') || value.contains('"') || value.contains('\n')) {
+          "\"${value.replace("\"", "\"\"")}\""
+        } else {
+          value
+        }
+    }
+}

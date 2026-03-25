@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="spark_blue">#0071CE</color>
+    <color name="spark_yellow">#FFC220</color>
+    <color name="spark_dark">#1A1A2E</color>
+    <color name="spark_surface">#16213E</color>
+    <color name="spark_green">#00C853</color>
+    <color name="spark_red">#FF1744</color>
+    <color name="white">#FFFFFF</color>
+    <color name="text_secondary">#B0BEC5</color>
+    <color name="overlay_background">#CC000000</color>
+</resources>

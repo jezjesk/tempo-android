@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/spark_dark"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <!-- Header -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚡ Tempo"
+            android:textColor="@color/spark_yellow"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Spark Driver Offer Monitor &amp; Auto-Accept/Reject"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:layout_marginBottom="32dp"/>
+
+        <!-- ── 1. Settings Button ── -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnOpenSettings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚙  Settings — Criteria &amp; Delays"
+            android:textColor="@color/white"
+            android:textSize="15sp"
+            app:backgroundTint="@color/spark_surface"
+            app:strokeColor="@color/spark_yellow"
+            app:strokeWidth="1dp"
+            app:cornerRadius="12dp"
+            android:layout_marginBottom="24dp"/>
+
+        <!-- ── 2. Monitoring Section ── -->
+        <androidx.cardview.widget.CardView
+            xmlns:card_view="http://schemas.android.com/apk/res-auto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            card_view:cardBackgroundColor="@color/spark_surface"
+            card_view:cardCornerRadius="16dp"
+            card_view:cardElevation="4dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Monitoring"
+                    android:textColor="@color/spark_yellow"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="12dp"/>
+
+                <!-- Accessibility Service status row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <View
+                        android:id="@+id/statusDot"
+                        android:layout_width="12dp"
+                        android:layout_height="12dp"
+                        android:background="@drawable/status_dot"
+                        android:layout_marginEnd="8dp"/>
+
+                    <TextView
+                        android:id="@+id/tvServiceStatus"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/service_inactive"
+                        android:textColor="@color/spark_red"
+                        android:textSize="13sp"/>
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEnableService"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/enable_service"
+                    android:textColor="@color/spark_dark"
+                    app:backgroundTint="@color/spark_yellow"
+                    app:cornerRadius="12dp"
+                    android:layout_marginBottom="16dp"/>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#33FFFFFF"
+                    android:layout_marginBottom="16dp"/>
+
+                <TextView
+                    android:id="@+id/tvMonitoringStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="● ACTIVE — watching for offers"
+                    android:textColor="@color/spark_green"
+                    android:textSize="13sp"
+                    android:layout_marginBottom="12dp"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMonitoringToggle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="⏸  Pause Monitoring"
+                    android:textColor="@color/white"
+                    app:backgroundTint="@color/spark_red"
+                    app:cornerRadius="12dp"/>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- ── 3. Email Log Button ── -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEmailLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="✉  Email Debug Log"
+            android:textColor="@color/white"
+            android:textSize="15sp"
+            app:backgroundTint="@color/spark_blue"
+            app:cornerRadius="12dp"
+            android:layout_marginBottom="12dp"/>
+
+        <!-- ── 4. Email Offers Button ── -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEmailCsv"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="✉  Email Offer Records (CSV)"
+            android:textColor="@color/white"
+            android:textSize="15sp"
+            app:backgroundTint="@color/spark_green"
+            app:cornerRadius="12dp"
+            android:layout_marginBottom="24dp"/>
+
+        <!-- ── 5. How It Works ── -->
+        <androidx.cardview.widget.CardView
+            xmlns:card_view="http://schemas.android.com/apk/res-auto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            card_view:cardBackgroundColor="@color/spark_surface"
+            card_view:cardCornerRadius="16dp"
+            card_view:cardElevation="4dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="How It Works"
+                    android:textColor="@color/spark_yellow"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="12dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1. Enable the Accessibility Service and tap ▶ Resume Monitoring\n2. Open the Spark Driver app and leave Tempo running in the background\n3. When an offer card appears, the app taps it open automatically\n4. It reads pay, tip, time, distance, stops, and store from the detail screen\n5. Calculates SparkPay, TotalPay, PayHourly, TipHourly, and $/mile\n6. Logs every offer to a timestamped CSV file\n7. Checks your configured criteria (min tip, min hourly, max distance, etc.)\n8. Accepts the offer if all criteria pass — rejects it if any criterion fails\n9. After accepting, monitoring pauses automatically so you can start the trip\n10. Tap ▶ Resume Monitoring when you\'re ready for the next offer"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:lineSpacingMultiplier="1.6"/>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+    </LinearLayout>
+</ScrollView>
