@@ -1732,6 +1732,9 @@ data class OfferDetails(
     private val miles get() = distanceMiles ?: 0.0
     private val hrs   get() = if (timeMinutes > 0) timeMinutes / 60.0 else 1.0
 
+    /** RealMin = TimeMin + DistanceMi × 2  (includes estimated return trip to the store) */
+    val realMin: Double get() = timeMinutes + miles * 2.0
+
     /**
      * CAMin — calculated minimum based on this offer's own per-minute rate + $0.30/mile.
      * Formula: 16.9 × 1.2 / 60 × TimeMin + 0.3 × DistanceMi  (CA Prop 22 minimum)
@@ -1753,8 +1756,8 @@ data class OfferDetails(
     /** TotalPay = SparkPay + TipPay */
     val totalPay: Double get() = sparkPay + tipPay
 
-    /** PayHourly = (TotalPay / TimeMin) × 60 */
-    val payHourly: Double get() = totalPay / hrs
+    /** PayHourly = (TotalPay / RealMin) × 60  (RealMin = TimeMin + DistanceMi×2) */
+    val payHourly: Double get() = if (realMin > 0) totalPay / realMin * 60.0 else 0.0
 
     /** TipHourly = (TipPay / TimeMin) × 60 */
     val tipHourly: Double get() = tipPay / hrs
