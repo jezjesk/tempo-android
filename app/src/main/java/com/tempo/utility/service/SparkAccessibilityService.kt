@@ -158,6 +158,8 @@ class SparkAccessibilityService : AccessibilityService() {
     /** Sentinel Long.MAX_VALUE = initial delay not yet fired; else = timestamp of last reject attempt.
      *  Written from tapHandler (background thread), read from mainHandler — must be @Volatile. */
     @Volatile private var lastDetailRejectAttemptTime = Long.MAX_VALUE
+    @Volatile private var lastGotItTapMs = 0L
+    private var lastRejectConfirmTapMs = 0L
 
     // Offer deduplication — skip CSV write if we see the same offer within DEDUP_WINDOW_MS
     private data class OfferKey(val sparkPay: Double, val tip: Double, val timeMin: Double)
@@ -361,7 +363,7 @@ class SparkAccessibilityService : AccessibilityService() {
                         if (gotIt != null) {
                             SparkLogger.i(TAG, "ACCEPTING: offer-unavailable dialog — tapping Got It, resetting IDLE")
                               if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_UNAVAILABLE")
-                            tapNode(gotIt)
+                            tapGotItWithRetry(gotIt)
                             gotIt.recycle()
                             cancelAcceptingTimeout()
                             state = State.IDLE
@@ -437,8 +439,14 @@ class SparkAccessibilityService : AccessibilityService() {
                         // Priority 1: rejection confirmation sheet (rejectThisOfferButton)
                         val rejectConfirm = findNodeById(root, ID_REJECT_CONFIRM_BUTTON)
                         if (rejectConfirm != null) {
-                            tapNode(rejectConfirm)
-                            SparkLogger.i(TAG, "REJECTING: confirmation sheet — gesture tap on rejectThisOfferButton")
+                            val nowRc = System.currentTimeMillis()
+                            if (nowRc - lastRejectConfirmTapMs > 600L) {
+                                lastRejectConfirmTapMs = nowRc
+                                tapNode(rejectConfirm)
+                                SparkLogger.i(TAG, "REJECTING: confirmation sheet — gesture tap on rejectThisOfferButton")
+                            } else {
+                                SparkLogger.d(TAG, "REJECTING: rejectThisOfferButton debounced (${nowRc - lastRejectConfirmTapMs}ms)")
+                            }
                             rejectConfirm.recycle()
                             broadcastStatus("Confirming rejection…")
                             // Stay REJECTING — HOME_SEARCHING will confirm the offer is gone
@@ -450,7 +458,7 @@ class SparkAccessibilityService : AccessibilityService() {
                         if (gotIt != null) {
                             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("REJECT_EXPIRED")
                               SparkLogger.i(TAG, "REJECTING: offer-unavailable dialog — tapping Got It, resetting IDLE")
-                            tapNode(gotIt)
+                            tapGotItWithRetry(gotIt)
                             gotIt.recycle()
                             cancelAutoRejectTimeout()
                             state = State.IDLE
@@ -907,7 +915,7 @@ class SparkAccessibilityService : AccessibilityService() {
         if (gotIt != null) {
             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_UNAVAILABLE")
               SparkLogger.i(TAG, "CONFIRMING_ACCEPT: offer-unavailable dialog — accept failed, resuming monitoring")
-            tapNode(gotIt)
+            tapGotItWithRetry(gotIt)
             gotIt.recycle()
             cancelConfirmAcceptTimeout()
             isMonitoring = true
@@ -1581,6 +1589,29 @@ class SparkAccessibilityService : AccessibilityService() {
                 child.recycle()
             }
         }
+    }
+
+    /**
+     * Taps the "GOT IT" button and schedules a 1500ms retry for Samsung devices
+     * where dispatchGesture() is queued and may take 20+ seconds to execute.
+     * The retry checks if the button is still visible and re-taps if so.
+     */
+    private fun tapGotItWithRetry(gotIt: AccessibilityNodeInfo) {
+        lastGotItTapMs = System.currentTimeMillis()
+        tapNode(gotIt)
+        tapHandler.postDelayed({
+            if (System.currentTimeMillis() - lastGotItTapMs < 1200L) return@postDelayed
+            val freshRoot = rootInActiveWindow ?: return@postDelayed
+            val freshGotIt = findNodeById(freshRoot, ID_GOT_IT_BUTTON)
+                ?: findClickableByText(freshRoot, listOf("got it"))
+            if (freshGotIt != null) {
+                SparkLogger.w(TAG, "tapGotItWithRetry: button still present after 1500ms — retapping (Samsung gesture queue)")
+                lastGotItTapMs = System.currentTimeMillis()
+                tapNode(freshGotIt)
+                freshGotIt.recycle()
+            }
+            freshRoot.recycle()
+        }, 1500L)
     }
 
     // ──────────────────────────────────────────────────────────────────────────
