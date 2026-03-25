@@ -1734,13 +1734,10 @@ data class OfferDetails(
 
     /**
      * CAMin — calculated minimum based on this offer's own per-minute rate + $0.30/mile.
-     * Formula: ((EstimatedTotal − TipPay) / TimeMin) × 60 + (0.3 × DistanceMi)
+     * Formula: 16.9 × 1.2 / 60 × TimeMin + 0.3 × DistanceMi  (CA Prop 22 minimum)
      */
     val caMin: Double
-        get() = if (timeMinutes > 0)
-                    ((estimatedPayDollars ?: 0.0) - tipDollars.coerceAtLeast(0.0)) / timeMinutes.toDouble() * 60.0 +
-                    (0.3 * miles)
-                else 0.0
+        get() = (16.9 * 1.2 / 60.0) * timeMinutes + (0.3 * miles)
 
     /**
      * SparkPay = MAX(CAMin, EstimatedTotal − TipPay)
