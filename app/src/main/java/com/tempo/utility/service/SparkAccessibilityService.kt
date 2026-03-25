@@ -573,17 +573,7 @@ class SparkAccessibilityService : AccessibilityService() {
         state = State.TAPPING_OFFER_CARD
         lastTapTime = now
         scheduleTappingCardTimeout()   // escape hatch if detail screen never appears
-
-        // Tap the offer card immediately using ACTION_CLICK.
-        //
-        // We deliberately do NOT use postDelayed on mainHandler here.
-        // On Samsung Android 15, the main-thread Handler is throttled by the battery
-        // optimiser: a 200 ms postDelayed routinely fires 27–40 s late, causing the
-        // offer to vanish before the tap executes.
-        //
-        // ACTION_CLICK is a direct Binder IPC call — it fires synchronously with no
-        // gesture queue, no animation delay, and is not subject to Handler throttling.
-        // clickableLayout IS confirmed clickable per live ID dumps (2026-03-25).
+        // Tap the offer card using a randomised gesture — no ACTION_CLICK.
         SparkLogger.i(TAG, "HOME_OFFER: tapping offer card via gesture")
         broadcastStatus("Offer detected — tapping card…")
         val tapped = tapNode(tapTarget)
