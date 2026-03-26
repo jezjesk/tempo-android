@@ -286,7 +286,6 @@ class SparkAccessibilityService : AccessibilityService() {
             lastLoggedScreen = screen
 
             // Dump all IDs on every screen change for diagnostic discovery
-            dumpScreenIds(root, "$screen (prev=$prevScreen state=$state)")
         }
 
         when (state) {
@@ -439,7 +438,6 @@ class SparkAccessibilityService : AccessibilityService() {
                             if (!tapped) {
                                 // Button not found yet — dump the live tree so we can identify the ID
                                 SparkLogger.w(TAG, "REJECTING: reject button not found — will retry in ${REJECT_DETAIL_RETRY_MS / 1000}s")
-                                dumpScreenIds(root, "REJECTING/DETAIL/NO_BUTTON_FOUND")
                             }
                         }
                     }
@@ -558,7 +556,6 @@ class SparkAccessibilityService : AccessibilityService() {
         }
 
         SparkLogger.i(TAG, "HOME_OFFER: offer card detected — finding tap target")
-        dumpScreenIds(root, "HOME_OFFER")
 
         // Guard: an accepted trip card looks identical to an offer card (same $XX.XX estimate
         // text and clickableLayout) but has ctaButton ("START TRIP") instead of rejectionButton
@@ -793,7 +790,6 @@ class SparkAccessibilityService : AccessibilityService() {
     private fun scrapeAndRecord(root: AccessibilityNodeInfo) {
         scrapeRetries++
         SparkLogger.i(TAG, "scrapeAndRecord: detail screen (attempt $scrapeRetries/$MAX_SCRAPE_RETRIES)")
-        if (scrapeRetries == 1) dumpScreenIds(root, "DETAIL_SCREEN")
 
         val details = scrapeDetailScreen(root)
         if (details == null) {
@@ -911,7 +907,6 @@ class SparkAccessibilityService : AccessibilityService() {
                                 broadcastStatus("Accept button not found — retrying…")
                                 val debugRoot = rootInActiveWindow
                                 if (debugRoot != null) {
-                                    dumpScreenIds(debugRoot, "ACCEPTING/NO_BUTTON_FOUND")
                                     debugRoot.recycle()
                                 }
                             }
@@ -943,7 +938,6 @@ class SparkAccessibilityService : AccessibilityService() {
                         SparkLogger.w(TAG, "REJECTING: reject button not found on initial attempt — event-driven retries will continue")
                         val debugRoot = rootInActiveWindow
                         if (debugRoot != null) {
-                            dumpScreenIds(debugRoot, "REJECTING/INITIAL_ATTEMPT/NO_BUTTON_FOUND")
                             debugRoot.recycle()
                         }
                     }
@@ -1312,43 +1306,6 @@ class SparkAccessibilityService : AccessibilityService() {
 
     // ──────────────────────────────────────────────────────────────────────────
     // ID / tree dump — called at every stage transition to capture screen state
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Walks the full accessibility tree and logs every node that has either a
-     * resource ID or visible text.  Log tag: "IdDump".
-     *
-     * Format per line:
-     *   [CLICK] id=<id>  text='<text>'  cd='<contentDesc>'  class=<simpleClassName>
-     *
-     * Logs under "IdDump" so you can filter with: tag:IdDump
-     */
-    private fun dumpScreenIds(root: AccessibilityNodeInfo, label: String) {
-        SparkLogger.i("IdDump", "══════ $label ══════")
-        dumpNode(root, depth = 0)
-        SparkLogger.i("IdDump", "══════ end $label ══════")
-    }
-
-    private fun dumpNode(node: AccessibilityNodeInfo, depth: Int) {
-        val id    = node.viewIdResourceName?.substringAfterLast("/") ?: ""
-        val text  = node.text?.toString()?.take(60) ?: ""
-        val cd    = node.contentDescription?.toString()?.take(60) ?: ""
-        val cls   = node.className?.toString()?.substringAfterLast(".") ?: ""
-        val click = if (node.isClickable) "[CLICK]" else "       "
-
-        // Only log nodes that carry at least one useful piece of information
-        if (id.isNotEmpty() || text.isNotEmpty() || cd.isNotEmpty()) {
-            val indent = "  ".repeat(depth.coerceAtMost(8))
-            SparkLogger.i("IdDump", "$indent$click id=$id  text='$text'  cd='$cd'  class=$cls")
-        }
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            dumpNode(child, depth + 1)
-            child.recycle()
-        }
-    }
-
     /**
      * Scrapes the offer detail screen using resource IDs from the actual XML hierarchy.
      *
