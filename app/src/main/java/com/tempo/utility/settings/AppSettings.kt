@@ -32,20 +32,20 @@ object AppSettings {
     const val KEY_DELAY_REJECT_MAX  = "delay_reject_max"
 
     // ── Defaults ──────────────────────────────────────────────────────────────
-    const val DEFAULT_MIN_TIP_AMOUNT    = 2.0f
-    const val DEFAULT_MIN_TIP_HOURLY    = 5.0f
-    const val DEFAULT_MIN_TOTAL_PAY     = 8.0f
-    const val DEFAULT_MIN_PAY_HOURLY    = 15.0f
-    const val DEFAULT_MAX_DISTANCE          = 20.0f
-    const val DEFAULT_MIN_DOLLARS_PER_MILE  = 1.00f
+    const val DEFAULT_MIN_TIP_AMOUNT    = 10.0f
+    const val DEFAULT_MIN_TIP_HOURLY    = 15.0f
+    const val DEFAULT_MIN_TOTAL_PAY     = 20.0f
+    const val DEFAULT_MIN_PAY_HOURLY    = 35.0f
+    const val DEFAULT_MAX_DISTANCE          = 200.0f
+    const val DEFAULT_MIN_DOLLARS_PER_MILE  = 3.0f
     const val DEFAULT_QUICK_MIN_HOURLY     = 50.0f
 
-    const val DEFAULT_DELAY_DETAILS_MIN = 800L
-    const val DEFAULT_DELAY_DETAILS_MAX = 2000L
-    const val DEFAULT_DELAY_ACCEPT_MIN  = 600L
-    const val DEFAULT_DELAY_ACCEPT_MAX  = 1500L
-    const val DEFAULT_DELAY_REJECT_MIN  = 600L
-    const val DEFAULT_DELAY_REJECT_MAX  = 1500L
+    const val DEFAULT_DELAY_DETAILS_MIN = 0L
+    const val DEFAULT_DELAY_DETAILS_MAX = 0L
+    const val DEFAULT_DELAY_ACCEPT_MIN  = 0L
+    const val DEFAULT_DELAY_ACCEPT_MAX  = 0L
+    const val DEFAULT_DELAY_REJECT_MIN  = 0L
+    const val DEFAULT_DELAY_REJECT_MAX  = 50L
 
     // ── Internal state ────────────────────────────────────────────────────────
     private var prefs: SharedPreferences? = null
@@ -64,7 +64,7 @@ object AppSettings {
     val minPayHourly: Double get() = p().getFloat(KEY_MIN_PAY_HOURLY, DEFAULT_MIN_PAY_HOURLY).toDouble()
     val maxDistance:        Double get() = p().getFloat(KEY_MAX_DISTANCE,         DEFAULT_MAX_DISTANCE).toDouble()
     val minDollarsPerMile:  Double get() = p().getFloat(KEY_MIN_DOLLARS_PER_MILE, DEFAULT_MIN_DOLLARS_PER_MILE).toDouble()
-    val quickModeEnabled: Boolean get() = p().getBoolean(KEY_QUICK_MODE_ENABLED, false)
+    val quickModeEnabled: Boolean get() = p().getBoolean(KEY_QUICK_MODE_ENABLED, true)
     val quickMinHourly:   Double  get() = p().getFloat(KEY_QUICK_MIN_HOURLY, DEFAULT_QUICK_MIN_HOURLY).toDouble()
 
     // ── Delay Criteria reads ──────────────────────────────────────────────────
