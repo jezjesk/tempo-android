@@ -627,7 +627,7 @@ class SparkAccessibilityService : AccessibilityService() {
               val texts = mutableListOf<String>()
               collectAllText(item, texts)
               val hasEstimate = texts.any { it.contains("estimate", ignoreCase = true) }
-              val hasDollar   = texts.any { it.matches(Regex("\$[0-9]+\.?[0-9]*.*")) }
+              val hasDollar   = texts.any { it.startsWith("$") }
               if (hasEstimate && hasDollar) {
                   cardTexts = texts.toList()
                   item.recycle()
