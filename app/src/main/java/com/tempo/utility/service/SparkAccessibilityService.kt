@@ -658,7 +658,8 @@ class SparkAccessibilityService : AccessibilityService() {
             return false
         }
 
-        val hourlyRate    = (total / timMin) * 60.0
+        val realMin       = timMin + 2.0 * distMi          // same formula as OfferDetails.realMin
+        val hourlyRate    = (total / realMin) * 60.0
         val perMile       = total / distMi
         val meetsHourly   = hourlyRate >= AppSettings.quickMinHourly
         val meetsDollarMi = perMile    >= AppSettings.minDollarsPerMile
