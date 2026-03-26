@@ -1254,7 +1254,6 @@ class SparkAccessibilityService : AccessibilityService() {
             SparkLogger.e(TAG, "playChime: failed", e)
         }
     }
-      }
 
     /**
      * Looks for the Reject button on the detail screen and taps it if found.
