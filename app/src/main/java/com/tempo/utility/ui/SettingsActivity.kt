@@ -7,6 +7,7 @@ import com.tempo.utility.R
 import com.tempo.utility.logging.SparkLogger
 import com.tempo.utility.settings.AppSettings
 import com.google.android.material.button.MaterialButton
+import androidx.appcompat.widget.SwitchCompat
 import com.google.android.material.textfield.TextInputEditText
 
 /**
@@ -21,6 +22,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var etMinPayHourly:    TextInputEditText
     private lateinit var etMaxDistance:          TextInputEditText
     private lateinit var etMinDollarsPerMile:    TextInputEditText
+    private lateinit var swQuickMode:          SwitchCompat
+    private lateinit var etQuickMinHourly:     TextInputEditText
 
     private lateinit var etDetailsDelayMin: TextInputEditText
     private lateinit var etDetailsDelayMax: TextInputEditText
@@ -41,6 +44,8 @@ class SettingsActivity : AppCompatActivity() {
         etMinPayHourly    = findViewById(R.id.etMinPayHourly)
         etMaxDistance         = findViewById(R.id.etMaxDistance)
         etMinDollarsPerMile   = findViewById(R.id.etMinDollarsPerMile)
+        swQuickMode       = findViewById(R.id.swQuickMode)
+        etQuickMinHourly  = findViewById(R.id.etQuickMinHourly)
 
         etDetailsDelayMin = findViewById(R.id.etDetailsDelayMin)
         etDetailsDelayMax = findViewById(R.id.etDetailsDelayMax)
@@ -63,6 +68,8 @@ class SettingsActivity : AppCompatActivity() {
         etMinPayHourly.setText(String.format("%.2f", AppSettings.minPayHourly))
         etMaxDistance.setText(String.format("%.1f", AppSettings.maxDistance))
         etMinDollarsPerMile.setText(String.format("%.2f", AppSettings.minDollarsPerMile))
+        swQuickMode.isChecked = AppSettings.quickModeEnabled
+        etQuickMinHourly.setText(String.format("%.0f", AppSettings.quickMinHourly))
 
         etDetailsDelayMin.setText(AppSettings.delayDetailsMin.toString())
         etDetailsDelayMax.setText(AppSettings.delayDetailsMax.toString())
@@ -79,6 +86,8 @@ class SettingsActivity : AppCompatActivity() {
         val minPayHourly    = etMinPayHourly.text?.toString()?.toFloatOrNull()
         val maxDistance         = etMaxDistance.text?.toString()?.toFloatOrNull()
         val minDollarsPerMile   = etMinDollarsPerMile.text?.toString()?.toFloatOrNull()
+        val quickModeEnabled    = swQuickMode.isChecked
+        val quickMinHourly      = etQuickMinHourly.text?.toString()?.toFloatOrNull()
 
         val detailsMin = etDetailsDelayMin.text?.toString()?.toLongOrNull()
         val detailsMax = etDetailsDelayMax.text?.toString()?.toLongOrNull()
@@ -87,7 +96,7 @@ class SettingsActivity : AppCompatActivity() {
         val rejectMin  = etRejectDelayMin.text?.toString()?.toLongOrNull()
         val rejectMax  = etRejectDelayMax.text?.toString()?.toLongOrNull()
 
-        if (listOf(minTipAmount, minTipHourly, minTotalPay, minPayHourly, maxDistance, minDollarsPerMile).any { it == null } ||
+        if (listOf(minTipAmount, minTipHourly, minTotalPay, minPayHourly, maxDistance, minDollarsPerMile, quickMinHourly).any { it == null } ||
             listOf(detailsMin, detailsMax, acceptMin, acceptMax, rejectMin, rejectMax).any { it == null }) {
             Toast.makeText(this, "Please fill in all fields with valid numbers", Toast.LENGTH_LONG).show()
             return
@@ -106,7 +115,7 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
 
-        SparkLogger.i("SettingsActivity", "User saved settings — minTipAmt=${minTipAmount!!} minTipHr=${minTipHourly!!}/hr minTotal=${minTotalPay!!} minPayHr=${minPayHourly!!}/hr maxDist=${maxDistance!!}mi min_per_mi=${minDollarsPerMile!!} delays=[details ${detailsMin!!}-${detailsMax!!}ms, accept ${acceptMin!!}-${acceptMax!!}ms, reject ${rejectMin!!}-${rejectMax!!}ms]")
+        SparkLogger.i("SettingsActivity", "User saved settings — minTipAmt=${minTipAmount!!} minTipHr=${minTipHourly!!}/hr minTotal=${minTotalPay!!} minPayHr=${minPayHourly!!}/hr maxDist=${maxDistance!!}mi min_per_mi=${minDollarsPerMile!!} quickMode=$quickModeEnabled quickMinHr=${quickMinHourly!!}/hr delays=[details ${detailsMin!!}-${detailsMax!!}ms, accept ${acceptMin!!}-${acceptMax!!}ms, reject ${rejectMin!!}-${rejectMax!!}ms]")
           AppSettings.save(
               minTipAmount    = minTipAmount!!,
               minTipHourly    = minTipHourly!!,
@@ -114,6 +123,8 @@ class SettingsActivity : AppCompatActivity() {
               minPayHourly    = minPayHourly!!,
               maxDistance        = maxDistance!!,
             minDollarsPerMile  = minDollarsPerMile!!,
+            quickModeEnabled   = quickModeEnabled,
+            quickMinHourly     = quickMinHourly!!,
             delayDetailsMin = detailsMin,
             delayDetailsMax = detailsMax,
             delayAcceptMin  = acceptMin,
