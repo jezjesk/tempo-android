@@ -1107,21 +1107,44 @@ class SparkAccessibilityService : AccessibilityService() {
      * Uses current notification volume — does not override user volume settings.
      */
     private fun playChime() {
-        try {
-            val uri      = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            val ringtone = RingtoneManager.getRingtone(applicationContext, uri)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                ringtone?.audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            }
-            ringtone?.play()
-            SparkLogger.d(TAG, "playChime: played")
-        } catch (e: Exception) {
-            SparkLogger.e(TAG, "playChime: failed", e)
-        }
-    }
+          try {
+              val am       = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+              val stream   = AudioManager.STREAM_ALARM
+              val savedVol = am.getStreamVolume(stream)
+              am.setStreamVolume(stream, am.getStreamMaxVolume(stream), 0)
+
+              fun makeRt(): android.media.Ringtone? {
+                  val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                  val rt  = RingtoneManager.getRingtone(applicationContext, uri)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                      rt?.audioAttributes = AudioAttributes.Builder()
+                          .setUsage(AudioAttributes.USAGE_ALARM)
+                          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                          .build()
+                  }
+                  return rt
+              }
+
+              makeRt()?.play()
+              SparkLogger.d(TAG, "playChime: alarm 1/3")
+              mainHandler.postDelayed({
+                  makeRt()?.play()
+                  SparkLogger.d(TAG, "playChime: alarm 2/3")
+              }, 3_000L)
+              mainHandler.postDelayed({
+                  val rt = makeRt()
+                  rt?.play()
+                  SparkLogger.d(TAG, "playChime: alarm 3/3")
+                  mainHandler.postDelayed({
+                      rt?.stop()
+                      am.setStreamVolume(stream, savedVol, 0)
+                      SparkLogger.d(TAG, "playChime: done, volume restored")
+                  }, 3_000L)
+              }, 6_000L)
+          } catch (e: Exception) {
+              SparkLogger.e(TAG, "playChime: failed", e)
+          }
+      }
 
     /**
      * Looks for the Reject button on the detail screen and taps it if found.
