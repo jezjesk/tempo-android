@@ -65,6 +65,7 @@ class SparkAccessibilityService : AccessibilityService() {
         // Detail screen — confirmed from log dump 2026-03-24
         private const val ID_ESTIMATED_LABEL     = "$SPARK_PACKAGE:id/estimatedLabelView"
         private const val ID_ESTIMATED_VALUE     = "$SPARK_PACKAGE:id/estimatedValueView"
+        private const val ID_ESTIMATE_VALUE_HOME = "$SPARK_PACKAGE:id/estimateValue"  // home card estimate (not detail screen)
         private const val ID_TIPS_VIEW           = "$SPARK_PACKAGE:id/tipsView"
         private const val ID_TRIP_SUMMARY        = "$SPARK_PACKAGE:id/tripSummary"
         private const val ID_STOP_COUNT          = "$SPARK_PACKAGE:id/stopCount"
@@ -613,128 +614,92 @@ class SparkAccessibilityService : AccessibilityService() {
      *  5. If no clickable found, return the item itself for a gesture tap at its center
      */
     // ── Quick Mode ────────────────────────────────────────────────────────────
-      /**
-       * Attempts to accept the offer directly from the home card without opening the detail screen.
-       *
-       * Parses the estimated total, distance, and time from the home card's text nodes, then checks:
-       *   1. (estimatedTotal / timeMin) × 60 > quickMinHourly  (default $50/hr)
-       *   2. estimatedTotal / distanceMi > minDollarsPerMile
-       *
-       * If both pass, gesture-taps acceptanceButton and transitions to CONFIRMING_ACCEPT.
-       * Returns true if a quick-accept tap was dispatched, false if criteria failed or data missing.
-       */
-      private fun tryQuickAccept(root: AccessibilityNodeInfo): Boolean {
-          val recycler = findNodeById(root, ID_RECYCLER) ?: return false
+    /**
+     * Attempts to accept the offer directly from the home card without opening the detail screen.
+     * Reads estimateValue, distance, and time nodes by resource ID.
+     *
+     * Criteria (all three must pass):
+     *   1. (total / timeMin) × 60 ≥ quickMinHourly
+     *   2. total / distanceMi    ≥ minDollarsPerMile
+     *   3. total                ≥ minTotalPay
+     *
+     * Returns true if a quick-accept tap was dispatched, false otherwise.
+     */
+    private fun tryQuickAccept(root: AccessibilityNodeInfo): Boolean {
+        // Fetch the three home-card value nodes directly by resource ID
+        val estNode  = findNodeById(root, ID_ESTIMATE_VALUE_HOME)
+        val distNode = findNodeById(root, ID_DISTANCE)
+        val timeNode = findNodeById(root, ID_TIME)
 
-          var cardTexts: List<String>? = null
-          for (i in 0 until recycler.childCount) {
-              val item = recycler.getChild(i) ?: continue
-              val texts = mutableListOf<String>()
-              collectAllText(item, texts)
-              val hasEstimate = texts.any { it.contains("estimate", ignoreCase = true) }
-              val hasDollar   = texts.any { it.startsWith("$") }
-              if (hasEstimate && hasDollar) {
-                  cardTexts = texts.toList()
-                  item.recycle()
-                  break
-              }
-              item.recycle()
-          }
-          recycler.recycle()
+        val rawEst  = estNode?.text?.toString()?.trim();  estNode?.recycle()
+        val rawDist = distNode?.text?.toString()?.trim(); distNode?.recycle()
+        val rawTime = timeNode?.text?.toString()?.trim(); timeNode?.recycle()
 
-          if (cardTexts == null) {
-              SparkLogger.d(TAG, "quickMode: offer card texts not found")
-              return false
-          }
+        SparkLogger.d(TAG, "quickMode: home card IDs — est='$rawEst' dist='$rawDist' time='$rawTime'")
 
-          val total  = parseHomeCardTotal(cardTexts)
-          val distMi = parseHomeCardDist(cardTexts)
-          val timMin = parseHomeCardTime(cardTexts)
+        // Parse estimated total: "$35.27" → 35.27
+        val total = rawEst?.removePrefix("$")?.toDoubleOrNull()
 
-          SparkLogger.i(TAG, "quickMode: parsed total=${total?.let { String.format("%.2f", it) }} distMi=${distMi?.let { String.format("%.1f", it) }} timeMin=${timMin?.let { String.format("%.1f", it) }}")
+        // Parse distance: "• 4.3 miles" → 4.3
+        val distMi = rawDist?.let { Regex("[0-9]+\\.?[0-9]*").find(it)?.value?.toDoubleOrNull() }
 
-          if (total == null || distMi == null || timMin == null || timMin <= 0 || distMi <= 0) {
-              SparkLogger.d(TAG, "quickMode: insufficient data — falling through to normal flow")
-              return false
-          }
+        // Parse time: "• 47 mins" → 47.0   "• 1 hr, 1 min" → 61.0
+        val timMin = rawTime?.let {
+            val hrs  = Regex("(\\d+)\\s*hr").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+            val mins = Regex("(\\d+)\\s*min").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+            val t    = hrs * 60.0 + mins
+            if (t > 0) t else null
+        }
 
-          val hourlyRate    = (total / timMin) * 60.0
-          val perMile       = total / distMi
-          val meetsHourly   = hourlyRate   >= AppSettings.quickMinHourly
-          val meetsDollarMi = perMile      >= AppSettings.minDollarsPerMile
-          val meetsMinPay   = total        >= AppSettings.minTotalPay
+        SparkLogger.i(TAG, "quickMode: parsed total=${total?.let { String.format("%.2f", it) }} distMi=${distMi?.let { String.format("%.1f", it) }} timeMin=${timMin?.let { String.format("%.1f", it) }}")
 
-          SparkLogger.i(TAG, "quickMode: hourly=${String.format("%.2f", hourlyRate)}/hr (min=${AppSettings.quickMinHourly}) perMile=${String.format("%.2f", perMile)} (min=${AppSettings.minDollarsPerMile}) minPay=${String.format("%.2f", total)} (min=${AppSettings.minTotalPay}) meetsHourly=$meetsHourly meetsMi=$meetsDollarMi meetsMinPay=$meetsMinPay")
+        if (total == null || distMi == null || timMin == null || timMin <= 0 || distMi <= 0) {
+            SparkLogger.d(TAG, "quickMode: insufficient ID data — skipping quick accept")
+            return false
+        }
 
-          if (!meetsHourly || !meetsDollarMi || !meetsMinPay) {
-              SparkLogger.i(TAG, "quickMode: criteria not met — falling through to normal flow")
-              return false
-          }
+        val hourlyRate    = (total / timMin) * 60.0
+        val perMile       = total / distMi
+        val meetsHourly   = hourlyRate >= AppSettings.quickMinHourly
+        val meetsDollarMi = perMile    >= AppSettings.minDollarsPerMile
+        val meetsMinPay   = total      >= AppSettings.minTotalPay
 
-          // Criteria met — find acceptanceButton and tap it directly
-          val acceptBtn = findNodeById(root, ID_ACCEPTANCE_BUTTON_HOME)
-          if (acceptBtn == null) {
-              SparkLogger.w(TAG, "quickMode: acceptanceButton not found — falling through to normal flow")
-              return false
-          }
+        SparkLogger.i(TAG, "quickMode: hourly=${String.format("%.2f", hourlyRate)}/hr (min=${AppSettings.quickMinHourly}) perMile=${String.format("%.2f", perMile)} (min=${AppSettings.minDollarsPerMile}) minPay=${String.format("%.2f", total)} (min=${AppSettings.minTotalPay}) meetsHourly=$meetsHourly meetsMi=$meetsDollarMi meetsMinPay=$meetsMinPay")
 
-          SparkLogger.i(TAG, "quickMode: QUICK ACCEPT — hourly=${String.format("%.2f", hourlyRate)}/hr perMile=${String.format("%.2f", perMile)} — tapping acceptanceButton")
-          broadcastStatus("QUICK ACCEPT: ${String.format("%.2f", hourlyRate)}/hr — tapping accept…")
+        if (!meetsHourly || !meetsDollarMi || !meetsMinPay) {
+            SparkLogger.i(TAG, "quickMode: criteria not met — skipping quick accept")
+            return false
+        }
 
-          // Write minimal CSV entry so the quick accept is recorded
-          val quickDetails = OfferDetails(
-              tipDollars          = 0.0,
-              timeMinutes         = timMin,
-              estimatedPayDollars = total,
-              distanceMiles       = distMi,
-              offerType           = "QUICK"
-          )
-          CsvLogger.append(quickDetails, "PASS", "QUICK_ACCEPT")
-          lastOfferCsvWritten = true
+        // All criteria met — tap acceptanceButton directly on the home card
+        val acceptBtn = findNodeById(root, ID_ACCEPTANCE_BUTTON_HOME)
+        if (acceptBtn == null) {
+            SparkLogger.w(TAG, "quickMode: acceptanceButton not found — falling through to normal flow")
+            return false
+        }
 
-          val tapped = tapNode(acceptBtn)
-          acceptBtn.recycle()
-          SparkLogger.i(TAG, "quickMode: gesture tap dispatched=$tapped")
+        SparkLogger.i(TAG, "quickMode: QUICK ACCEPT — ${String.format("%.2f", hourlyRate)}/hr perMile=${String.format("%.2f", perMile)} — tapping acceptanceButton")
+        broadcastStatus("QUICK ACCEPT: ${String.format("%.2f", hourlyRate)}/hr — tapping accept…")
 
-          state = State.CONFIRMING_ACCEPT
-          lastTapTime = System.currentTimeMillis()
-          scheduleConfirmAcceptTimeout()
-          return true
-      }
+        val quickDetails = OfferDetails(
+            tipDollars          = 0.0,
+            timeMinutes         = timMin,
+            estimatedPayDollars = total,
+            distanceMiles       = distMi,
+            offerType           = "QUICK"
+        )
+        CsvLogger.append(quickDetails, "PASS", "QUICK_ACCEPT")
+        lastOfferCsvWritten = true
 
-      /** Parses "$19.62" or "$9.62 estimate" → 19.62 */
-      private fun parseHomeCardTotal(texts: List<String>): Double? {
-          val regex = Regex("\\\$([0-9]+\\.?[0-9]*)")
-          for (t in texts) {
-              val m = regex.find(t) ?: continue
-              return m.groupValues[1].toDoubleOrNull()
-          }
-          return null
-      }
+        val tapped = tapNode(acceptBtn)
+        acceptBtn.recycle()
+        SparkLogger.i(TAG, "quickMode: gesture tap dispatched=$tapped")
 
-      /** Parses "22.6 miles" or "5 mi" → 22.6 */
-      private fun parseHomeCardDist(texts: List<String>): Double? {
-          val regex = Regex("([0-9]+\\.?[0-9]*)\\s*mi(?:les?)?", RegexOption.IGNORE_CASE)
-          for (t in texts) {
-              val m = regex.find(t) ?: continue
-              return m.groupValues[1].toDoubleOrNull()
-          }
-          return null
-      }
-
-      /** Parses "1 hr, 1 min" → 61.0, or "30 min" → 30.0, or "1 hr" → 60.0 */
-      private fun parseHomeCardTime(texts: List<String>): Double? {
-          val hrMin = Regex("(?:(\\d+)\\s*hr[s]?)?\\s*,?\\s*(?:(\\d+)\\s*min)?", RegexOption.IGNORE_CASE)
-          for (t in texts) {
-              if (!t.contains("min", ignoreCase = true) && !t.contains("hr", ignoreCase = true)) continue
-              val m = hrMin.find(t) ?: continue
-              val hrs  = m.groupValues[1].toDoubleOrNull() ?: 0.0
-              val mins = m.groupValues[2].toDoubleOrNull() ?: 0.0
-              val total = hrs * 60.0 + mins
-              if (total > 0) return total
-          }
-          return null
-      }
+        state = State.CONFIRMING_ACCEPT
+        lastTapTime = System.currentTimeMillis()
+        scheduleConfirmAcceptTimeout()
+        return true
+    }
 
       private fun findOfferCardTapTarget(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val recycler = findNodeById(root, ID_RECYCLER) ?: run {
