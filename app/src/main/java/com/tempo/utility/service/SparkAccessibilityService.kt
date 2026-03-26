@@ -144,8 +144,10 @@ class SparkAccessibilityService : AccessibilityService() {
             if (!enabled) {
                 state = State.IDLE
                 broadcastStatus("Monitoring paused")
+                playChime()
             } else {
                 broadcastStatus("Monitoring resumed — watching for offers")
+                playChime()
             }
         }
     }
@@ -329,6 +331,7 @@ class SparkAccessibilityService : AccessibilityService() {
                             isMonitoring = false
                             state = State.IDLE
                             broadcastStatus("Active trip — monitoring paused. Resume in the app.")
+                            playChime()
                             return
                         }
                         cancelTappingCardTimeout()
@@ -391,6 +394,7 @@ class SparkAccessibilityService : AccessibilityService() {
                             isMonitoring = false
                             state = State.IDLE
                             broadcastStatus("Trip accepted! Monitoring paused — resume in the app.")
+                            playChime()
                         }
                         // else: still loading, waiting for the postDelayed accept tap
                     }
@@ -567,6 +571,7 @@ class SparkAccessibilityService : AccessibilityService() {
                 isMonitoring = false
                 state = State.IDLE
                 broadcastStatus("Active trip — monitoring paused. Resume in the app.")
+                            playChime()
                 return
             }
         }
@@ -921,6 +926,7 @@ class SparkAccessibilityService : AccessibilityService() {
             isMonitoring = true
             state = State.IDLE
             broadcastStatus("Offer no longer available — monitoring resumed")
+                            playChime()
             return
         }
 
@@ -939,6 +945,7 @@ class SparkAccessibilityService : AccessibilityService() {
             isMonitoring = true
             state = State.IDLE
             broadcastStatus("Offer no longer available — monitoring resumed")
+                            playChime()
             return
         }
 
@@ -954,6 +961,7 @@ class SparkAccessibilityService : AccessibilityService() {
             isMonitoring = false
             state = State.IDLE
             broadcastStatus("Trip accepted and confirmed! Monitoring paused — resume in the app.")
+                            playChime()
             return
         }
 
@@ -972,6 +980,7 @@ class SparkAccessibilityService : AccessibilityService() {
                 if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_TIMEOUT")
                   SparkLogger.w(TAG, "CONFIRMING_ACCEPT: timeout — neither Start Trip nor unavailable detected, resuming monitoring")
                 broadcastStatus("Accept confirmation timed out — monitoring resumed")
+                playChime()
                 isMonitoring = true
                 state = State.IDLE
             }
@@ -1089,6 +1098,28 @@ class SparkAccessibilityService : AccessibilityService() {
             }, 3_000L)
         } catch (e: Exception) {
             SparkLogger.e(TAG, "playHorn: failed", e)
+        }
+    }
+
+    // ── Pause/resume chime ────────────────────────────────────────────────────
+    /**
+     * Plays the default notification sound once whenever monitoring is paused or resumed.
+     * Uses current notification volume — does not override user volume settings.
+     */
+    private fun playChime() {
+        try {
+            val uri      = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val ringtone = RingtoneManager.getRingtone(applicationContext, uri)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                ringtone?.audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            }
+            ringtone?.play()
+            SparkLogger.d(TAG, "playChime: played")
+        } catch (e: Exception) {
+            SparkLogger.e(TAG, "playChime: failed", e)
         }
     }
 
