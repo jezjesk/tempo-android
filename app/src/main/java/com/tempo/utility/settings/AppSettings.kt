@@ -21,6 +21,8 @@ object AppSettings {
     const val KEY_MIN_PAY_HOURLY    = "min_pay_hourly"
     const val KEY_MAX_DISTANCE          = "max_distance"
     const val KEY_MIN_DOLLARS_PER_MILE  = "min_dollars_per_mile"
+    const val KEY_QUICK_MODE_ENABLED   = "quick_mode_enabled"
+    const val KEY_QUICK_MIN_HOURLY     = "quick_min_hourly"
 
     const val KEY_DELAY_DETAILS_MIN = "delay_details_min"
     const val KEY_DELAY_DETAILS_MAX = "delay_details_max"
@@ -36,6 +38,7 @@ object AppSettings {
     const val DEFAULT_MIN_PAY_HOURLY    = 15.0f
     const val DEFAULT_MAX_DISTANCE          = 20.0f
     const val DEFAULT_MIN_DOLLARS_PER_MILE  = 1.00f
+    const val DEFAULT_QUICK_MIN_HOURLY     = 50.0f
 
     const val DEFAULT_DELAY_DETAILS_MIN = 800L
     const val DEFAULT_DELAY_DETAILS_MAX = 2000L
@@ -61,6 +64,8 @@ object AppSettings {
     val minPayHourly: Double get() = p().getFloat(KEY_MIN_PAY_HOURLY, DEFAULT_MIN_PAY_HOURLY).toDouble()
     val maxDistance:        Double get() = p().getFloat(KEY_MAX_DISTANCE,         DEFAULT_MAX_DISTANCE).toDouble()
     val minDollarsPerMile:  Double get() = p().getFloat(KEY_MIN_DOLLARS_PER_MILE, DEFAULT_MIN_DOLLARS_PER_MILE).toDouble()
+    val quickModeEnabled: Boolean get() = p().getBoolean(KEY_QUICK_MODE_ENABLED, false)
+    val quickMinHourly:   Double  get() = p().getFloat(KEY_QUICK_MIN_HOURLY, DEFAULT_QUICK_MIN_HOURLY).toDouble()
 
     // ── Delay Criteria reads ──────────────────────────────────────────────────
     val delayDetailsMin: Long get() = p().getLong(KEY_DELAY_DETAILS_MIN, DEFAULT_DELAY_DETAILS_MIN)
@@ -99,6 +104,8 @@ object AppSettings {
         minPayHourly:    Float,
         maxDistance:        Float,
         minDollarsPerMile:  Float,
+        quickModeEnabled:   Boolean,
+        quickMinHourly:     Float,
         delayDetailsMin: Long,
         delayDetailsMax: Long,
         delayAcceptMin:  Long,
@@ -113,6 +120,8 @@ object AppSettings {
             putFloat(KEY_MIN_PAY_HOURLY,    minPayHourly)
             putFloat(KEY_MAX_DISTANCE,         maxDistance)
             putFloat(KEY_MIN_DOLLARS_PER_MILE, minDollarsPerMile)
+            putBoolean(KEY_QUICK_MODE_ENABLED, quickModeEnabled)
+            putFloat(KEY_QUICK_MIN_HOURLY, quickMinHourly)
             putLong(KEY_DELAY_DETAILS_MIN,  delayDetailsMin)
             putLong(KEY_DELAY_DETAILS_MAX,  delayDetailsMax)
             putLong(KEY_DELAY_ACCEPT_MIN,   delayAcceptMin)
