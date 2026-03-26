@@ -148,12 +148,17 @@ class SparkAccessibilityService : AccessibilityService() {
                 playChime()
             } else {
                 broadcastStatus("Monitoring resumed — watching for offers")
-                playChime()
             }
         }
     }
 
     private var lastTapTime        = 0L
+
+    // Chime state — sequence guard prevents overlapping chime chains
+    private var chimeSeq      = 0
+    private var chimeRingtone: android.media.Ringtone? = null
+    private var chimeSavedVol = -1
+    private var chimeAm: android.media.AudioManager?  = null
     private var confirmAcceptTimeoutRunnable: Runnable? = null
     private var acceptingTimeoutRunnable: Runnable? = null
     private var tappingCardTimeoutRunnable: Runnable? = null
@@ -1051,7 +1056,6 @@ class SparkAccessibilityService : AccessibilityService() {
             isMonitoring = true
             state = State.IDLE
             broadcastStatus("Offer no longer available — monitoring resumed")
-                            playChime()
             return
         }
 
@@ -1070,7 +1074,6 @@ class SparkAccessibilityService : AccessibilityService() {
             isMonitoring = true
             state = State.IDLE
             broadcastStatus("Offer no longer available — monitoring resumed")
-                            playChime()
             return
         }
 
@@ -1105,7 +1108,6 @@ class SparkAccessibilityService : AccessibilityService() {
                 if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_TIMEOUT")
                   SparkLogger.w(TAG, "CONFIRMING_ACCEPT: timeout — neither Start Trip nor unavailable detected, resuming monitoring")
                 broadcastStatus("Accept confirmation timed out — monitoring resumed")
-                playChime()
                 isMonitoring = true
                 state = State.IDLE
             }
@@ -1232,43 +1234,60 @@ class SparkAccessibilityService : AccessibilityService() {
      * Uses current notification volume — does not override user volume settings.
      */
     private fun playChime() {
-          try {
-              val am       = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-              val stream   = AudioManager.STREAM_ALARM
-              val savedVol = am.getStreamVolume(stream)
-              am.setStreamVolume(stream, am.getStreamMaxVolume(stream), 0)
+        try {
+            // Stop any in-progress chime; increment sequence so stale postDelayed
+            // callbacks from prior calls see the wrong seq and bail out immediately.
+            chimeSeq++
+            val seq = chimeSeq
+            chimeRingtone?.stop()
+            chimeRingtone = null
+            chimeAm?.let { if (chimeSavedVol >= 0) it.setStreamVolume(AudioManager.STREAM_ALARM, chimeSavedVol, 0) }
 
-              fun makeRt(): android.media.Ringtone? {
-                  val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                  val rt  = RingtoneManager.getRingtone(applicationContext, uri)
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                      rt?.audioAttributes = AudioAttributes.Builder()
-                          .setUsage(AudioAttributes.USAGE_ALARM)
-                          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                          .build()
-                  }
-                  return rt
-              }
+            val am     = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val stream = AudioManager.STREAM_ALARM
+            chimeSavedVol = am.getStreamVolume(stream)
+            chimeAm   = am
+            am.setStreamVolume(stream, am.getStreamMaxVolume(stream), 0)
 
-              makeRt()?.play()
-              SparkLogger.d(TAG, "playChime: alarm 1/3")
-              mainHandler.postDelayed({
-                  makeRt()?.play()
-                  SparkLogger.d(TAG, "playChime: alarm 2/3")
-              }, 3_000L)
-              mainHandler.postDelayed({
-                  val rt = makeRt()
-                  rt?.play()
-                  SparkLogger.d(TAG, "playChime: alarm 3/3")
-                  mainHandler.postDelayed({
-                      rt?.stop()
-                      am.setStreamVolume(stream, savedVol, 0)
-                      SparkLogger.d(TAG, "playChime: done, volume restored")
-                  }, 3_000L)
-              }, 6_000L)
-          } catch (e: Exception) {
-              SparkLogger.e(TAG, "playChime: failed", e)
-          }
+            fun makeRt(): android.media.Ringtone? {
+                val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                val rt  = RingtoneManager.getRingtone(applicationContext, uri)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    rt?.audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                }
+                return rt
+            }
+
+            chimeRingtone = makeRt().also { it?.play(); SparkLogger.d(TAG, "playChime: alarm 1/3") }
+
+            mainHandler.postDelayed({
+                if (seq != chimeSeq) return@postDelayed
+                chimeRingtone?.stop()
+                chimeRingtone = makeRt().also { it?.play(); SparkLogger.d(TAG, "playChime: alarm 2/3") }
+            }, 3_000L)
+
+            mainHandler.postDelayed({
+                if (seq != chimeSeq) return@postDelayed
+                chimeRingtone?.stop()
+                chimeRingtone = makeRt().also { it?.play(); SparkLogger.d(TAG, "playChime: alarm 3/3") }
+            }, 6_000L)
+
+            mainHandler.postDelayed({
+                if (seq != chimeSeq) return@postDelayed
+                chimeRingtone?.stop()
+                chimeRingtone = null
+                am.setStreamVolume(stream, chimeSavedVol, 0)
+                chimeSavedVol = -1
+                SparkLogger.d(TAG, "playChime: done, volume restored")
+            }, 9_000L)
+
+        } catch (e: Exception) {
+            SparkLogger.e(TAG, "playChime: failed", e)
+        }
+    }
       }
 
     /**
