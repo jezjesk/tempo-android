@@ -279,11 +279,8 @@ class SparkAccessibilityService : AccessibilityService() {
             SparkLogger.i(TAG, "Screen changed: $prevScreen → $screen | state=$state")
             lastLoggedScreen = screen
 
-            // Dump every screen we don't specifically recognise so unhandled screens
-            // are captured in full in the log and can be diagnosed from the share.
-            if (screen == AppScreen.OTHER) {
-                dumpScreenIds(root, "UNKNOWN_SCREEN (prev=$prevScreen state=$state)")
-            }
+            // Dump all IDs on every screen change for diagnostic discovery
+            dumpScreenIds(root, "$screen (prev=$prevScreen state=$state)")
         }
 
         when (state) {
@@ -660,10 +657,11 @@ class SparkAccessibilityService : AccessibilityService() {
           val perMile       = total / distMi
           val meetsHourly   = hourlyRate   >= AppSettings.quickMinHourly
           val meetsDollarMi = perMile      >= AppSettings.minDollarsPerMile
+          val meetsMinPay   = total        >= AppSettings.minTotalPay
 
-          SparkLogger.i(TAG, "quickMode: hourly=${String.format("%.2f", hourlyRate)}/hr (min=${AppSettings.quickMinHourly}) perMile=${String.format("%.2f", perMile)} (min=${AppSettings.minDollarsPerMile}) meetsHourly=$meetsHourly meetsMi=$meetsDollarMi")
+          SparkLogger.i(TAG, "quickMode: hourly=${String.format("%.2f", hourlyRate)}/hr (min=${AppSettings.quickMinHourly}) perMile=${String.format("%.2f", perMile)} (min=${AppSettings.minDollarsPerMile}) minPay=${String.format("%.2f", total)} (min=${AppSettings.minTotalPay}) meetsHourly=$meetsHourly meetsMi=$meetsDollarMi meetsMinPay=$meetsMinPay")
 
-          if (!meetsHourly || !meetsDollarMi) {
+          if (!meetsHourly || !meetsDollarMi || !meetsMinPay) {
               SparkLogger.i(TAG, "quickMode: criteria not met — falling through to normal flow")
               return false
           }
