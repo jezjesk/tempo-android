@@ -68,7 +68,6 @@ object AppSettings {
     val minDollarsPerMile:  Double get() = p().getFloat(KEY_MIN_DOLLARS_PER_MILE, DEFAULT_MIN_DOLLARS_PER_MILE).toDouble()
     val quickModeEnabled: Boolean get() = p().getBoolean(KEY_QUICK_MODE_ENABLED, true)
     val quickMinHourly:   Double  get() = p().getFloat(KEY_QUICK_MIN_HOURLY, DEFAULT_QUICK_MIN_HOURLY).toDouble()
-        quickMinEstTotal:    Float,
     val quickMinEstTotal:  Double  get() = p().getFloat(KEY_QUICK_MIN_EST_TOTAL, DEFAULT_QUICK_MIN_EST_TOTAL).toDouble()
 
     // ── Delay Criteria reads ──────────────────────────────────────────────────
