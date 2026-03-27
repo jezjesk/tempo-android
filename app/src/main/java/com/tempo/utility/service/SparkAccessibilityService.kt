@@ -679,12 +679,11 @@ class SparkAccessibilityService : AccessibilityService() {
         val perMile       = total / distMi
         val meetsHourly   = hourlyRate >= AppSettings.quickMinHourly
         val meetsDollarMi = perMile    >= AppSettings.minDollarsPerMile
-        val meetsMinPay   = total      >= AppSettings.minTotalPay
         val meetsEstTotal = total      >= AppSettings.quickMinEstTotal
 
-        SparkLogger.i(TAG, "quickMode: hourly=${String.format("%.2f", hourlyRate)}/hr (min=${AppSettings.quickMinHourly}) perMile=${String.format("%.2f", perMile)} (min=${AppSettings.minDollarsPerMile}) minPay=${String.format("%.2f", total)} (min=${AppSettings.minTotalPay}) minEstTotal=${String.format("%.2f", total)} (min=${AppSettings.quickMinEstTotal}) meetsHourly=$meetsHourly meetsMi=$meetsDollarMi meetsMinPay=$meetsMinPay meetsEstTotal=$meetsEstTotal")
+        SparkLogger.i(TAG, "quickMode: hourly=${String.format("%.2f", hourlyRate)}/hr (min=${AppSettings.quickMinHourly}) perMile=${String.format("%.2f", perMile)} (min=${AppSettings.minDollarsPerMile}) minEstTotal=${String.format("%.2f", total)} (min=${AppSettings.quickMinEstTotal}) meetsHourly=$meetsHourly meetsMi=$meetsDollarMi meetsEstTotal=$meetsEstTotal")
 
-        if (!meetsHourly || !meetsDollarMi || !meetsMinPay || !meetsEstTotal) {
+        if (!meetsHourly || !meetsDollarMi || !meetsEstTotal) {
             SparkLogger.i(TAG, "quickMode: criteria not met — skipping quick accept")
             return false
         }
