@@ -387,7 +387,7 @@ class SparkAccessibilityService : AccessibilityService() {
                             ?: findClickableByText(root, listOf("got it"))
                         if (gotIt != null) {
                             SparkLogger.i(TAG, "ACCEPTING: offer-unavailable dialog — tapping Got It, resetting IDLE")
-                            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_UNAVAILABLE")
+                            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("TOO_SLOW")
                             tapGotItWithRetry(gotIt)
                             gotIt.recycle()
                             cancelAcceptingTimeout()
@@ -482,11 +482,6 @@ class SparkAccessibilityService : AccessibilityService() {
                             }
                             rejectConfirm.recycle()
                             broadcastStatus("Confirming rejection…")
-                            return
-                        }
-                            rejectConfirm.recycle()
-                            broadcastStatus("Confirming rejection…")
-                            // Stay REJECTING — HOME_SEARCHING will confirm the offer is gone
                             return
                         }
                         // Priority 2: "Offer unavailable" / expiry modal
@@ -1045,7 +1040,7 @@ class SparkAccessibilityService : AccessibilityService() {
         // ── 0. "You got it!" success-confirmation dialog (getItButton) ──
         // This fires when Spark confirms the accept with a success modal. It uses a different
         // view ID (getItButton) than the error dialog (gotItButton), so we must check it first
-        // to avoid misclassifying a successful accept as ACCEPT_UNAVAILABLE.
+        // to avoid misclassifying a successful accept as TOO_SLOW.
         val getItSuccess = findNodeById(root, ID_GET_IT_BUTTON)
         if (getItSuccess != null) {
             SparkLogger.i(TAG, "CONFIRMING_ACCEPT: 'You got it!' confirmation — accept succeeded, pausing monitoring")
@@ -1064,7 +1059,7 @@ class SparkAccessibilityService : AccessibilityService() {
         val gotIt = findNodeById(root, ID_GOT_IT_BUTTON)
             ?: findClickableByText(root, listOf("got it"))
         if (gotIt != null) {
-            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_UNAVAILABLE")
+            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("TOO_SLOW")
             SparkLogger.i(TAG, "CONFIRMING_ACCEPT: offer-unavailable dialog — accept failed, resuming monitoring")
             tapGotItWithRetry(gotIt)
             gotIt.recycle()
@@ -1084,7 +1079,7 @@ class SparkAccessibilityService : AccessibilityService() {
             text.contains("offer expired", ignoreCase = true)
         }
         if (offerGone) {
-            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_UNAVAILABLE")
+            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("TOO_SLOW")
               SparkLogger.i(TAG, "CONFIRMING_ACCEPT: 'no longer available' text detected — accept failed, resuming monitoring")
             cancelConfirmAcceptTimeout()
             isMonitoring = true
