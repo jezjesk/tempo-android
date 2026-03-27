@@ -609,6 +609,9 @@ class SparkAccessibilityService : AccessibilityService() {
         // Quick Mode: if enabled, try to accept directly from home card without opening detail
         if (AppSettings.quickModeEnabled && tryQuickAccept(root)) return
 
+        // Home pre-reject: if threshold > 0 and offer is clearly below criteria, reject from home card
+        if (tryQuickReject(root)) return
+
         // Strategy: find the node with "estimate" text, walk up to its clickable ancestor
         val tapTarget = findOfferCardTapTarget(root)
         if (tapTarget == null) {
@@ -727,6 +730,76 @@ class SparkAccessibilityService : AccessibilityService() {
         scheduleConfirmAcceptTimeout()
         return true
     }
+      /**
+       * Rejects an offer directly from the home card without opening the detail screen.
+       * Fires when the estimated hourly rate OR estimated total falls below
+       * [homeRejectThreshold]% of the full criteria — i.e., clearly not worth opening.
+       *
+       * Threshold is user-configurable (0 = disabled, 60 = default, 100 = reject at full criteria).
+       * Uses the same ID-based home-card scrape as tryQuickAccept.
+       */
+      private fun tryQuickReject(root: AccessibilityNodeInfo): Boolean {
+          val threshold = AppSettings.homeRejectThreshold
+          if (threshold <= 0.0) return false   // disabled
+
+          val estNode  = findNodeById(root, ID_ESTIMATE_VALUE_HOME)
+          val distNode = findNodeById(root, ID_DISTANCE)
+          val timeNode = findNodeById(root, ID_TIME)
+
+          val rawEst  = estNode?.text?.toString()?.trim();  estNode?.recycle()
+          val rawDist = distNode?.text?.toString()?.trim(); distNode?.recycle()
+          val rawTime = timeNode?.text?.toString()?.trim(); timeNode?.recycle()
+
+          val total  = rawEst?.removePrefix("$")?.toDoubleOrNull()
+          val distMi = rawDist?.let { Regex("[0-9]+\.?[0-9]*").find(it)?.value?.toDoubleOrNull() }
+          val timMin = rawTime?.let {
+              val hrs  = Regex("(\d+)\s*hr").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+              val mins = Regex("(\d+)\s*min").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+              val t    = hrs * 60.0 + mins
+              if (t > 0) t else null
+          }
+
+          if (total == null || timMin == null || timMin <= 0) {
+              SparkLogger.d(TAG, "homeReject: insufficient home-card data — skipping pre-reject")
+              return false
+          }
+
+          val realMin     = timMin + (if (distMi != null && distMi > 0) 2.0 * distMi else 0.0)
+          val hourlyRate  = (total / realMin) * 60.0
+          val hourlyFloor = threshold * AppSettings.minPayHourly
+          val totalFloor  = threshold * AppSettings.minTotalPay
+
+          val belowHourly = hourlyRate < hourlyFloor
+          val belowTotal  = total      < totalFloor
+
+          SparkLogger.i(TAG, "homeReject: hourly=${String.format("%.2f", hourlyRate)}/hr (floor=${String.format("%.2f", hourlyFloor)}) total=${String.format("%.2f", total)} (floor=${String.format("%.2f", totalFloor)}) threshold=${String.format("%.0f", threshold * 100)}% belowHourly=$belowHourly belowTotal=$belowTotal")
+
+          if (!belowHourly && !belowTotal) return false
+
+          val rejectBtn = findNodeById(root, ID_REJECTION_BUTTON_HOME)
+          if (rejectBtn == null) {
+              SparkLogger.w(TAG, "homeReject: rejectionButton not found on home card — skipping pre-reject")
+              return false
+          }
+
+          val reason = buildList {
+              if (belowHourly) add("${String.format("%.2f", hourlyRate)}/hr < floor ${String.format("%.2f", hourlyFloor)}/hr")
+              if (belowTotal)  add("total $${String.format("%.2f", total)} < floor $${String.format("%.2f", totalFloor)}")
+          }.joinToString(", ")
+
+          SparkLogger.i(TAG, "homeReject: PRE-REJECT at home card — $reason")
+          broadcastStatus("✗ Pre-rejected — $reason")
+
+          tapNode(rejectBtn)
+          rejectBtn.recycle()
+
+          state = State.REJECTING
+          rejectConfirmSheetFirstSeenMs = 0L
+          lastRejectConfirmTapMs        = 0L
+          lastDetailRejectAttemptTime   = Long.MAX_VALUE   // not on DETAIL; block event-driven retry
+          scheduleAutoRejectTimeout()
+          return true
+      }
 
       private fun findOfferCardTapTarget(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val recycler = findNodeById(root, ID_RECYCLER) ?: run {
