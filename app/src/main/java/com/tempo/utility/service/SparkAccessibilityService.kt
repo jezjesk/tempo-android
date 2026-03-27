@@ -84,6 +84,8 @@ class SparkAccessibilityService : AccessibilityService() {
         private const val ID_CHIP                = "$SPARK_PACKAGE:id/chip"              // offer tags (Pharmacy, Shopping…)
         // "Offer unavailable" dialog — confirmed from log dump 2026-03-24
         private const val ID_GOT_IT_BUTTON          = "$SPARK_PACKAGE:id/gotItButton"
+        // "You got it!" success-confirmation dialog — fires after a successful accept tap
+        private const val ID_GET_IT_BUTTON          = "${SPARK_PACKAGE}:id/getItButton"
         // Rejection confirmation bottom sheet — confirmed from log dump 2026-03-24
         private const val ID_REJECT_CONFIRM_BUTTON  = "$SPARK_PACKAGE:id/rejectThisOfferButton"
         private const val ID_KEEP_OFFER_BUTTON      = "$SPARK_PACKAGE:id/keepThisOfferButton"
@@ -363,12 +365,28 @@ class SparkAccessibilityService : AccessibilityService() {
             State.ACCEPTING -> {
                 when (screen) {
                     AppScreen.OTHER -> {
-                        // "Offer unavailable" dialog appeared before we could tap accept
+                        // Priority 1: "You got it!" success-confirmation dialog (getItButton).
+                        // This fires when Spark confirms the accept with a modal rather than
+                        // navigating directly to the Start Trip screen.
+                        val getItSuccess = findNodeById(root, ID_GET_IT_BUTTON)
+                        if (getItSuccess != null) {
+                            SparkLogger.i(TAG, "ACCEPTING: 'You got it!' confirmation — accept succeeded, pausing monitoring")
+                            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPTED")
+                            tapNode(getItSuccess)
+                            getItSuccess.recycle()
+                            cancelAcceptingTimeout()
+                            isMonitoring = false
+                            state = State.IDLE
+                            broadcastStatus("Trip accepted! Monitoring paused — resume in the app.")
+                            playChime()
+                            return
+                        }
+                        // Priority 2: "Offer unavailable" / expiry error dialog (gotItButton or text)
                         val gotIt = findNodeById(root, ID_GOT_IT_BUTTON)
                             ?: findClickableByText(root, listOf("got it"))
                         if (gotIt != null) {
                             SparkLogger.i(TAG, "ACCEPTING: offer-unavailable dialog — tapping Got It, resetting IDLE")
-                              if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_UNAVAILABLE")
+                            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_UNAVAILABLE")
                             tapGotItWithRetry(gotIt)
                             gotIt.recycle()
                             cancelAcceptingTimeout()
@@ -568,11 +586,12 @@ class SparkAccessibilityService : AccessibilityService() {
                 || findClickableByText(root, listOf("start trip")) != null
             ctaNode?.recycle()
             if (hasStartTrip) {
+                if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPTED")
                 SparkLogger.i(TAG, "HOME_OFFER: active trip card detected (no reject/accept buttons, START TRIP present) — pausing monitoring")
                 isMonitoring = false
                 state = State.IDLE
                 broadcastStatus("Active trip — monitoring paused. Resume in the app.")
-                            playChime()
+                playChime()
                 return
             }
         }
@@ -1004,12 +1023,30 @@ class SparkAccessibilityService : AccessibilityService() {
      * A 20-second timeout (scheduleConfirmAcceptTimeout) fires if neither screen appears.
      */
     private fun handleConfirmingAccept(root: AccessibilityNodeInfo, screen: AppScreen) {
+        // ── 0. "You got it!" success-confirmation dialog (getItButton) ──
+        // This fires when Spark confirms the accept with a success modal. It uses a different
+        // view ID (getItButton) than the error dialog (gotItButton), so we must check it first
+        // to avoid misclassifying a successful accept as ACCEPT_UNAVAILABLE.
+        val getItSuccess = findNodeById(root, ID_GET_IT_BUTTON)
+        if (getItSuccess != null) {
+            SparkLogger.i(TAG, "CONFIRMING_ACCEPT: 'You got it!' confirmation — accept succeeded, pausing monitoring")
+            if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPTED")
+            tapNode(getItSuccess)
+            getItSuccess.recycle()
+            cancelConfirmAcceptTimeout()
+            isMonitoring = false
+            state = State.IDLE
+            broadcastStatus("Trip accepted! Monitoring paused — resume in the app.")
+            playChime()
+            return
+        }
+
         // ── 1. Check for "Offer unavailable" (same gotItButton used in reject flow) ──
         val gotIt = findNodeById(root, ID_GOT_IT_BUTTON)
             ?: findClickableByText(root, listOf("got it"))
         if (gotIt != null) {
             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_UNAVAILABLE")
-              SparkLogger.i(TAG, "CONFIRMING_ACCEPT: offer-unavailable dialog — accept failed, resuming monitoring")
+            SparkLogger.i(TAG, "CONFIRMING_ACCEPT: offer-unavailable dialog — accept failed, resuming monitoring")
             tapGotItWithRetry(gotIt)
             gotIt.recycle()
             cancelConfirmAcceptTimeout()
