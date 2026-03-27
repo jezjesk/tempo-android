@@ -24,6 +24,7 @@ object AppSettings {
     const val KEY_QUICK_MODE_ENABLED   = "quick_mode_enabled"
     const val KEY_QUICK_MIN_HOURLY     = "quick_min_hourly"
     const val KEY_QUICK_MIN_EST_TOTAL     = "quick_min_est_total"
+    const val KEY_HOME_REJECT_THRESHOLD = "home_reject_threshold"
 
     const val KEY_DELAY_DETAILS_MIN = "delay_details_min"
     const val KEY_DELAY_DETAILS_MAX = "delay_details_max"
@@ -41,6 +42,8 @@ object AppSettings {
     const val DEFAULT_MIN_DOLLARS_PER_MILE  = 3.0f
     const val DEFAULT_QUICK_MIN_HOURLY     = 50.0f
     const val DEFAULT_QUICK_MIN_EST_TOTAL  = 25.0f
+    /** Stored as 0–100 (percent). 60 = reject home-card offers below 60% of criteria. 0 = disabled. */
+    const val DEFAULT_HOME_REJECT_THRESHOLD = 60.0f
 
     const val DEFAULT_DELAY_DETAILS_MIN = 0L
     const val DEFAULT_DELAY_DETAILS_MAX = 0L
@@ -69,6 +72,8 @@ object AppSettings {
     val quickModeEnabled: Boolean get() = p().getBoolean(KEY_QUICK_MODE_ENABLED, true)
     val quickMinHourly:   Double  get() = p().getFloat(KEY_QUICK_MIN_HOURLY, DEFAULT_QUICK_MIN_HOURLY).toDouble()
     val quickMinEstTotal:  Double  get() = p().getFloat(KEY_QUICK_MIN_EST_TOTAL, DEFAULT_QUICK_MIN_EST_TOTAL).toDouble()
+    /** Returns the pre-reject threshold as a fraction (0.0–1.0). 0 = disabled. */
+    val homeRejectThreshold: Double get() = p().getFloat(KEY_HOME_REJECT_THRESHOLD, DEFAULT_HOME_REJECT_THRESHOLD).toDouble() / 100.0
 
     // ── Delay Criteria reads ──────────────────────────────────────────────────
     val delayDetailsMin: Long get() = p().getLong(KEY_DELAY_DETAILS_MIN, DEFAULT_DELAY_DETAILS_MIN)
@@ -110,6 +115,7 @@ object AppSettings {
         quickModeEnabled:   Boolean,
         quickMinHourly:     Float,
         quickMinEstTotal:    Float,
+        homeRejectThreshold: Float,
         delayDetailsMin: Long,
         delayDetailsMax: Long,
         delayAcceptMin:  Long,
@@ -127,6 +133,7 @@ object AppSettings {
             putBoolean(KEY_QUICK_MODE_ENABLED, quickModeEnabled)
             putFloat(KEY_QUICK_MIN_HOURLY, quickMinHourly)
             putFloat(KEY_QUICK_MIN_EST_TOTAL, quickMinEstTotal)
+            putFloat(KEY_HOME_REJECT_THRESHOLD, homeRejectThreshold)
             putLong(KEY_DELAY_DETAILS_MIN,  delayDetailsMin)
             putLong(KEY_DELAY_DETAILS_MAX,  delayDetailsMax)
             putLong(KEY_DELAY_ACCEPT_MIN,   delayAcceptMin)
