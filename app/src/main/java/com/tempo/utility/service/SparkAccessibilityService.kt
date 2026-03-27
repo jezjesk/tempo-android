@@ -184,7 +184,6 @@ class SparkAccessibilityService : AccessibilityService() {
     private var suppressedCount = 0L
     private var lastSuppressLog = 0L
     private var lastLoggedScreen: AppScreen? = null   // only log detectScreen on change
-    private var lastHasOffer = false                   // only log hasOfferInRecycler on change
     private var lastWaitingLogTime = 0L                // throttle "still waiting" to 1× per 15 s
     private var lastNullWindowLogTime = 0L             // throttle null-window warnings to 1× per 5 s
     private var scrapeRetries = 0                      // guard against infinite retry loops
@@ -538,18 +537,11 @@ class SparkAccessibilityService : AccessibilityService() {
 
         // Home screen: has the home layout
         if (hasNodeWithId(root, ID_HOME_LAYOUT) || hasNodeWithId(root, ID_BOTTOM_SHEET)) {
-            // Check if there's an actual offer (has "estimate" text in bottom sheet)
-            // vs just the "Searching for offers" waiting state
-            val recycler = findNodeById(root, ID_RECYCLER)
-            val searchingNode = findNodeById(root, ID_SEARCHING)
-
-            return if (recycler != null && hasOfferInRecycler(recycler)) {
-                recycler.recycle()
-                searchingNode?.recycle()
+            // Offer card is present when estimateValue (home card ID) is in the tree.
+            // This is faster and more reliable than walking all RecyclerView text.
+            return if (hasNodeWithId(root, ID_ESTIMATE_VALUE_HOME)) {
                 AppScreen.HOME_OFFER
             } else {
-                recycler?.recycle()
-                searchingNode?.recycle()
                 AppScreen.HOME_SEARCHING
             }
         }
@@ -557,23 +549,7 @@ class SparkAccessibilityService : AccessibilityService() {
         return AppScreen.OTHER
     }
 
-    /**
-     * Checks whether the RecyclerView in the bottom sheet contains an offer card.
-     * An offer card contains text matching the "$XX.XX estimate" pattern.
-     */
-    private fun hasOfferInRecycler(recycler: AccessibilityNodeInfo): Boolean {
-        val texts = mutableListOf<String>()
-        collectAllText(recycler, texts)
-        val hasEstimate = texts.any { it.contains("estimate", ignoreCase = true) }
-        val hasDollar   = texts.any { it.matches(Regex("\\$[0-9]+\\.?[0-9]*.*")) }
-        val result = hasEstimate && hasDollar
-        // Only log when the offer-present state changes, not on every event
-        if (result != lastHasOffer) {
-            SparkLogger.i(TAG, "hasOfferInRecycler changed → $result | estimate=$hasEstimate dollar=$hasDollar texts=${texts.take(6)}")
-            lastHasOffer = result
-        }
-        return result
-    }
+
 
     // ──────────────────────────────────────────────────────────────────────────
     // HOME_OFFER: tap the offer card to open detail screen
@@ -955,6 +931,8 @@ class SparkAccessibilityService : AccessibilityService() {
             val rejectDelay = AppSettings.randomClickRejectDelay()
             broadcastStatus("✗ Offer below criteria — rejecting in ${rejectDelay}ms…")
             state = State.REJECTING
+            rejectConfirmSheetFirstSeenMs = 0L   // reset for fresh reject cycle
+            lastRejectConfirmTapMs        = 0L   // reset so confirm sheet tap fires on next offer
             // Use Long.MAX_VALUE sentinel to block the event-driven retry loop until
             // the initial random delay fires.
             lastDetailRejectAttemptTime = Long.MAX_VALUE
@@ -1169,6 +1147,7 @@ class SparkAccessibilityService : AccessibilityService() {
                 broadcastStatus("Tap timed out — watching for next offer")
                 state = State.IDLE
                 lastWaitingLogTime = 0L
+                scrapeRetries = 0
             }
         }
         tappingCardTimeoutRunnable = r
