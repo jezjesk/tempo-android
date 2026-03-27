@@ -680,10 +680,11 @@ class SparkAccessibilityService : AccessibilityService() {
         val meetsHourly   = hourlyRate >= AppSettings.quickMinHourly
         val meetsDollarMi = perMile    >= AppSettings.minDollarsPerMile
         val meetsMinPay   = total      >= AppSettings.minTotalPay
+        val meetsEstTotal = total      >= AppSettings.quickMinEstTotal
 
-        SparkLogger.i(TAG, "quickMode: hourly=${String.format("%.2f", hourlyRate)}/hr (min=${AppSettings.quickMinHourly}) perMile=${String.format("%.2f", perMile)} (min=${AppSettings.minDollarsPerMile}) minPay=${String.format("%.2f", total)} (min=${AppSettings.minTotalPay}) meetsHourly=$meetsHourly meetsMi=$meetsDollarMi meetsMinPay=$meetsMinPay")
+        SparkLogger.i(TAG, "quickMode: hourly=${String.format("%.2f", hourlyRate)}/hr (min=${AppSettings.quickMinHourly}) perMile=${String.format("%.2f", perMile)} (min=${AppSettings.minDollarsPerMile}) minPay=${String.format("%.2f", total)} (min=${AppSettings.minTotalPay}) minEstTotal=${String.format("%.2f", total)} (min=${AppSettings.quickMinEstTotal}) meetsHourly=$meetsHourly meetsMi=$meetsDollarMi meetsMinPay=$meetsMinPay meetsEstTotal=$meetsEstTotal")
 
-        if (!meetsHourly || !meetsDollarMi || !meetsMinPay) {
+        if (!meetsHourly || !meetsDollarMi || !meetsMinPay || !meetsEstTotal) {
             SparkLogger.i(TAG, "quickMode: criteria not met — skipping quick accept")
             return false
         }
@@ -853,16 +854,10 @@ class SparkAccessibilityService : AccessibilityService() {
         // ── Per-criterion evaluation with individual failure reasons ──────────────
         val rejectReasons = mutableListOf<String>()
         val s = AppSettings  // alias for brevity
-        // Tip criteria are only enforced when the tip is confirmed.
-        // When tipStatus == "PENDING" the dollar amount shown is not final — skipping
-        // minTipAmount and minTipHourly prevents rejecting high-paying offers whose tip
-        // has not yet been revealed (the most common case in the field).
-        if (details.tipStatus != "PENDING") {
-            if (details.tipPay    < s.minTipAmount)
-                rejectReasons += "tipPay=${String.format("%.2f", details.tipPay)} < min=${String.format("%.2f", s.minTipAmount)}"
-            if (details.tipHourly < s.minTipHourly)
-                rejectReasons += "tipHourly=${String.format("%.2f", details.tipHourly)}/hr < min=${String.format("%.2f", s.minTipHourly)}/hr"
-        }
+        if (details.tipPay    < s.minTipAmount)
+            rejectReasons += "tipPay=${String.format("%.2f", details.tipPay)} < min=${String.format("%.2f", s.minTipAmount)}"
+        if (details.tipHourly < s.minTipHourly)
+            rejectReasons += "tipHourly=${String.format("%.2f", details.tipHourly)}/hr < min=${String.format("%.2f", s.minTipHourly)}/hr"
         if (details.totalPay  < s.minTotalPay)
             rejectReasons += "totalPay=${String.format("%.2f", details.totalPay)} < min=${String.format("%.2f", s.minTotalPay)}"
         if (details.payHourly < s.minPayHourly)
