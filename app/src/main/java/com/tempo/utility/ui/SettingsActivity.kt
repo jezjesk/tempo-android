@@ -24,6 +24,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var etMinDollarsPerMile:    TextInputEditText
     private lateinit var swQuickMode:          SwitchCompat
     private lateinit var etQuickMinHourly:     TextInputEditText
+    private lateinit var etQuickMinEstTotal: TextInputEditText
 
     private lateinit var etDetailsDelayMin: TextInputEditText
     private lateinit var etDetailsDelayMax: TextInputEditText
@@ -46,6 +47,7 @@ class SettingsActivity : AppCompatActivity() {
         etMinDollarsPerMile   = findViewById(R.id.etMinDollarsPerMile)
         swQuickMode       = findViewById(R.id.swQuickMode)
         etQuickMinHourly  = findViewById(R.id.etQuickMinHourly)
+        etQuickMinEstTotal  = findViewById(R.id.etQuickMinEstTotal)
 
         etDetailsDelayMin = findViewById(R.id.etDetailsDelayMin)
         etDetailsDelayMax = findViewById(R.id.etDetailsDelayMax)
@@ -70,6 +72,7 @@ class SettingsActivity : AppCompatActivity() {
         etMinDollarsPerMile.setText(String.format("%.2f", AppSettings.minDollarsPerMile))
         swQuickMode.isChecked = AppSettings.quickModeEnabled
         etQuickMinHourly.setText(String.format("%.0f", AppSettings.quickMinHourly))
+        etQuickMinEstTotal.setText(String.format("%.2f", AppSettings.quickMinEstTotal))
 
         etDetailsDelayMin.setText(AppSettings.delayDetailsMin.toString())
         etDetailsDelayMax.setText(AppSettings.delayDetailsMax.toString())
@@ -88,6 +91,7 @@ class SettingsActivity : AppCompatActivity() {
         val minDollarsPerMile   = etMinDollarsPerMile.text?.toString()?.toFloatOrNull()
         val quickModeEnabled    = swQuickMode.isChecked
         val quickMinHourly      = etQuickMinHourly.text?.toString()?.toFloatOrNull()
+        val quickMinEstTotal      = etQuickMinEstTotal.text?.toString()?.toFloatOrNull()
 
         val detailsMin = etDetailsDelayMin.text?.toString()?.toLongOrNull()
         val detailsMax = etDetailsDelayMax.text?.toString()?.toLongOrNull()
@@ -96,7 +100,7 @@ class SettingsActivity : AppCompatActivity() {
         val rejectMin  = etRejectDelayMin.text?.toString()?.toLongOrNull()
         val rejectMax  = etRejectDelayMax.text?.toString()?.toLongOrNull()
 
-        if (listOf(minTipAmount, minTipHourly, minTotalPay, minPayHourly, maxDistance, minDollarsPerMile, quickMinHourly).any { it == null } ||
+        if (listOf(minTipAmount, minTipHourly, minTotalPay, minPayHourly, maxDistance, minDollarsPerMile, quickMinHourly, quickMinEstTotal).any { it == null } ||
             listOf(detailsMin, detailsMax, acceptMin, acceptMax, rejectMin, rejectMax).any { it == null }) {
             Toast.makeText(this, "Please fill in all fields with valid numbers", Toast.LENGTH_LONG).show()
             return
@@ -115,7 +119,7 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
 
-        SparkLogger.i("SettingsActivity", "User saved settings — minTipAmt=${minTipAmount!!} minTipHr=${minTipHourly!!}/hr minTotal=${minTotalPay!!} minPayHr=${minPayHourly!!}/hr maxDist=${maxDistance!!}mi min_per_mi=${minDollarsPerMile!!} quickMode=$quickModeEnabled quickMinHr=${quickMinHourly!!}/hr delays=[details ${detailsMin!!}-${detailsMax!!}ms, accept ${acceptMin!!}-${acceptMax!!}ms, reject ${rejectMin!!}-${rejectMax!!}ms]")
+        SparkLogger.i("SettingsActivity", "User saved settings — minTipAmt=${minTipAmount!!} minTipHr=${minTipHourly!!}/hr minTotal=${minTotalPay!!} minPayHr=${minPayHourly!!}/hr maxDist=${maxDistance!!}mi min_per_mi=${minDollarsPerMile!!} quickMode=$quickModeEnabled quickMinHr=${quickMinHourly!!}/hr quickMinEstTotal=${quickMinEstTotal!!} delays=[details ${detailsMin!!}-${detailsMax!!}ms, accept ${acceptMin!!}-${acceptMax!!}ms, reject ${rejectMin!!}-${rejectMax!!}ms]")
           AppSettings.save(
               minTipAmount    = minTipAmount!!,
               minTipHourly    = minTipHourly!!,
@@ -125,6 +129,7 @@ class SettingsActivity : AppCompatActivity() {
             minDollarsPerMile  = minDollarsPerMile!!,
             quickModeEnabled   = quickModeEnabled,
             quickMinHourly     = quickMinHourly!!,
+            quickMinEstTotal    = quickMinEstTotal!!,
             delayDetailsMin = detailsMin,
             delayDetailsMax = detailsMax,
             delayAcceptMin  = acceptMin,
