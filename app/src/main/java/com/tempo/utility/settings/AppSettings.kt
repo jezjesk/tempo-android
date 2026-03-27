@@ -23,6 +23,7 @@ object AppSettings {
     const val KEY_MIN_DOLLARS_PER_MILE  = "min_dollars_per_mile"
     const val KEY_QUICK_MODE_ENABLED   = "quick_mode_enabled"
     const val KEY_QUICK_MIN_HOURLY     = "quick_min_hourly"
+    const val KEY_QUICK_MIN_EST_TOTAL     = "quick_min_est_total"
 
     const val KEY_DELAY_DETAILS_MIN = "delay_details_min"
     const val KEY_DELAY_DETAILS_MAX = "delay_details_max"
@@ -38,7 +39,8 @@ object AppSettings {
     const val DEFAULT_MIN_PAY_HOURLY    = 35.0f
     const val DEFAULT_MAX_DISTANCE          = 200.0f
     const val DEFAULT_MIN_DOLLARS_PER_MILE  = 3.0f
-    const val DEFAULT_QUICK_MIN_HOURLY     = 40.0f
+    const val DEFAULT_QUICK_MIN_HOURLY     = 50.0f
+    const val DEFAULT_QUICK_MIN_EST_TOTAL  = 25.0f
 
     const val DEFAULT_DELAY_DETAILS_MIN = 0L
     const val DEFAULT_DELAY_DETAILS_MAX = 0L
@@ -66,6 +68,8 @@ object AppSettings {
     val minDollarsPerMile:  Double get() = p().getFloat(KEY_MIN_DOLLARS_PER_MILE, DEFAULT_MIN_DOLLARS_PER_MILE).toDouble()
     val quickModeEnabled: Boolean get() = p().getBoolean(KEY_QUICK_MODE_ENABLED, true)
     val quickMinHourly:   Double  get() = p().getFloat(KEY_QUICK_MIN_HOURLY, DEFAULT_QUICK_MIN_HOURLY).toDouble()
+        quickMinEstTotal:    Float,
+    val quickMinEstTotal:  Double  get() = p().getFloat(KEY_QUICK_MIN_EST_TOTAL, DEFAULT_QUICK_MIN_EST_TOTAL).toDouble()
 
     // ── Delay Criteria reads ──────────────────────────────────────────────────
     val delayDetailsMin: Long get() = p().getLong(KEY_DELAY_DETAILS_MIN, DEFAULT_DELAY_DETAILS_MIN)
@@ -86,12 +90,8 @@ object AppSettings {
      * Every criterion is evaluated literally (0 means 0, not "skip").
      */
     fun meetsAllCriteria(details: OfferDetails): Boolean {
-        // Tip criteria are skipped when the tip has not yet been confirmed by the customer.
-        // PENDING tips show a partial amount that does not reflect the final value.
-        if (details.tipStatus != "PENDING") {
-            if (details.tipPay    < minTipAmount) return false
-            if (details.tipHourly < minTipHourly) return false
-        }
+        if (details.tipPay    < minTipAmount) return false
+        if (details.tipHourly < minTipHourly) return false
         if (details.totalPay  < minTotalPay)  return false
         if (details.payHourly < minPayHourly) return false
         val dist = details.distanceMiles
@@ -110,6 +110,7 @@ object AppSettings {
         minDollarsPerMile:  Float,
         quickModeEnabled:   Boolean,
         quickMinHourly:     Float,
+        quickMinEstTotal:    Float,
         delayDetailsMin: Long,
         delayDetailsMax: Long,
         delayAcceptMin:  Long,
@@ -126,6 +127,7 @@ object AppSettings {
             putFloat(KEY_MIN_DOLLARS_PER_MILE, minDollarsPerMile)
             putBoolean(KEY_QUICK_MODE_ENABLED, quickModeEnabled)
             putFloat(KEY_QUICK_MIN_HOURLY, quickMinHourly)
+            putFloat(KEY_QUICK_MIN_EST_TOTAL, quickMinEstTotal)
             putLong(KEY_DELAY_DETAILS_MIN,  delayDetailsMin)
             putLong(KEY_DELAY_DETAILS_MAX,  delayDetailsMax)
             putLong(KEY_DELAY_ACCEPT_MIN,   delayAcceptMin)
