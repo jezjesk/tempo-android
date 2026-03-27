@@ -172,6 +172,7 @@ class SparkAccessibilityService : AccessibilityService() {
     @Volatile private var lastGotItTapMs = 0L
     private var lastRejectConfirmTapMs = 0L
     private var rejectConfirmSheetFirstSeenMs = 0L
+    private var stuckOtherSinceMs        = 0L   // escape hatch: unrecognized OTHER in ACCEPTING/CONFIRMING_ACCEPT
 
     // Offer deduplication — skip CSV write if we see the same offer within DEDUP_WINDOW_MS
     private data class OfferKey(val sparkPay: Double, val tip: Double, val timeMin: Double)
@@ -375,6 +376,7 @@ class SparkAccessibilityService : AccessibilityService() {
                             tapNode(getItSuccess)
                             getItSuccess.recycle()
                             cancelAcceptingTimeout()
+                            stuckOtherSinceMs = 0L
                             isMonitoring = false
                             state = State.IDLE
                             broadcastStatus("Trip accepted! Monitoring paused — resume in the app.")
@@ -388,16 +390,33 @@ class SparkAccessibilityService : AccessibilityService() {
                             SparkLogger.i(TAG, "ACCEPTING: offer-unavailable dialog — tapping Got It, resetting IDLE")
                             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("TOO_SLOW")
                             tapGotItWithRetry(gotIt)
-                            gotIt.recycle()
-                            cancelAcceptingTimeout()
-                            state = State.IDLE
-                            broadcastStatus("Offer unavailable — watching for next offer")
-                        }
-                        // else: some other transient overlay; wait
-                    }
+                              gotIt.recycle()
+                              cancelAcceptingTimeout()
+                              stuckOtherSinceMs = 0L
+                              state = State.IDLE
+                              broadcastStatus("Offer unavailable — watching for next offer")
+                          }
+                          // else: unrecognized OTHER — could be a transient overlay or a silent expiry.
+                          // Give it 3 s to produce an expected modal before forcing IDLE.
+                          else {
+                              val nowMs = System.currentTimeMillis()
+                              if (stuckOtherSinceMs == 0L) {
+                                  stuckOtherSinceMs = nowMs
+                                  SparkLogger.d(TAG, "ACCEPTING: unrecognized OTHER — waiting up to 3s for expected modal")
+                              } else if (nowMs - stuckOtherSinceMs >= 3_000L) {
+                                  SparkLogger.w(TAG, "ACCEPTING: unrecognized OTHER for 3s — offer likely gone, resetting IDLE")
+                                  cancelAcceptingTimeout()
+                                  stuckOtherSinceMs = 0L
+                                  if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_EXPIRED")
+                                  state = State.IDLE
+                                  broadcastStatus("Offer gone — watching for next offer")
+                              }
+                          }
+                      }
                     AppScreen.HOME_SEARCHING -> {
                         // Offer expired before the accept tap fired
                         cancelAcceptingTimeout()
+                        stuckOtherSinceMs = 0L
                         if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_EXPIRED")
                           SparkLogger.i(TAG, "ACCEPTING: offer expired — resetting IDLE")
                         state = State.IDLE
@@ -412,6 +431,7 @@ class SparkAccessibilityService : AccessibilityService() {
                               playHorn()
                               SparkLogger.i(TAG, "ACCEPTING: active trip detail detected — trip already accepted, pausing monitoring")
                             cancelAcceptingTimeout()
+                            stuckOtherSinceMs = 0L
                             isMonitoring = false
                             state = State.IDLE
                             broadcastStatus("Trip accepted! Monitoring paused — resume in the app.")
@@ -808,8 +828,16 @@ class SparkAccessibilityService : AccessibilityService() {
                 state = State.IDLE
                 broadcastStatus("Could not read offer details — watching for next offer")
             } else {
-                SparkLogger.w(TAG, "scrapeAndRecord: detail not ready — will retry on next event")
-            }
+                  // Proactively re-attempt rather than waiting passively for the next event —
+                  // detail fields can take 100–300ms to populate after the screen appears.
+                  SparkLogger.w(TAG, "scrapeAndRecord: detail not ready — retrying in 150ms (attempt $scrapeRetries/$MAX_SCRAPE_RETRIES)")
+                  mainHandler.postDelayed({
+                      if (state == State.TAPPING_OFFER_CARD || state == State.IDLE) {
+                          val r = rootInActiveWindow ?: return@postDelayed
+                          try { handleEvent(r) } finally { r.recycle() }
+                      }
+                  }, 150)
+              }
             return
         }
 
@@ -904,6 +932,7 @@ class SparkAccessibilityService : AccessibilityService() {
                                 SparkLogger.i(TAG, "ACCEPTING: accept tapped — watching for Start Trip confirmation")
                                 broadcastStatus("Accept tapped — confirming…")
                                 cancelAcceptingTimeout()
+                                stuckOtherSinceMs = 0L
                                 state = State.CONFIRMING_ACCEPT
                                 scheduleConfirmAcceptTimeout()
                             } else {
@@ -1026,6 +1055,7 @@ class SparkAccessibilityService : AccessibilityService() {
             tapNode(getItSuccess)
             getItSuccess.recycle()
             cancelConfirmAcceptTimeout()
+            stuckOtherSinceMs = 0L
             isMonitoring = false
             state = State.IDLE
             broadcastStatus("Trip accepted! Monitoring paused — resume in the app.")
@@ -1042,6 +1072,7 @@ class SparkAccessibilityService : AccessibilityService() {
             tapGotItWithRetry(gotIt)
             gotIt.recycle()
             cancelConfirmAcceptTimeout()
+            stuckOtherSinceMs = 0L
             isMonitoring = true
             state = State.IDLE
             broadcastStatus("Offer no longer available — monitoring resumed")
@@ -1060,6 +1091,7 @@ class SparkAccessibilityService : AccessibilityService() {
             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("TOO_SLOW")
               SparkLogger.i(TAG, "CONFIRMING_ACCEPT: 'no longer available' text detected — accept failed, resuming monitoring")
             cancelConfirmAcceptTimeout()
+            stuckOtherSinceMs = 0L
             isMonitoring = true
             state = State.IDLE
             broadcastStatus("Offer no longer available — monitoring resumed")
@@ -1075,6 +1107,7 @@ class SparkAccessibilityService : AccessibilityService() {
               playHorn()
               SparkLogger.i(TAG, "CONFIRMING_ACCEPT: Start Trip screen detected — trip confirmed! Pausing monitoring.")
             cancelConfirmAcceptTimeout()
+            stuckOtherSinceMs = 0L
             isMonitoring = false
             state = State.IDLE
             broadcastStatus("Trip accepted and confirmed! Monitoring paused — resume in the app.")
@@ -1082,9 +1115,28 @@ class SparkAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Still transitioning — wait for the next event
-        SparkLogger.d(TAG, "CONFIRMING_ACCEPT: still waiting for confirmation (screen=$screen, texts=${allTexts.take(5)})")
-    }
+        // Escape hatch: if we've been stuck on an unrecognized OTHER screen for 3s, bail out.
+          if (screen == AppScreen.OTHER) {
+              val nowMs = System.currentTimeMillis()
+              if (stuckOtherSinceMs == 0L) {
+                  stuckOtherSinceMs = nowMs
+                  SparkLogger.d(TAG, "CONFIRMING_ACCEPT: unrecognized OTHER — waiting up to 3s for expected modal")
+              } else if (nowMs - stuckOtherSinceMs >= 3_000L) {
+                  SparkLogger.w(TAG, "CONFIRMING_ACCEPT: unrecognized OTHER for 3s — offer likely gone, resetting IDLE")
+                  cancelConfirmAcceptTimeout()
+                  stuckOtherSinceMs = 0L
+                  if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_EXPIRED")
+                  isMonitoring = true
+                  state = State.IDLE
+                  broadcastStatus("Offer gone — watching for next offer")
+                  return
+              }
+          } else {
+              stuckOtherSinceMs = 0L   // clear timer if screen moved away from OTHER
+          }
+          // Still transitioning — wait for the next event
+          SparkLogger.d(TAG, "CONFIRMING_ACCEPT: still waiting for confirmation (screen=$screen, texts=${allTexts.take(5)})")
+      }
 
     /**
      * Posts a 20-second fallback timeout for CONFIRMING_ACCEPT.
@@ -1097,6 +1149,7 @@ class SparkAccessibilityService : AccessibilityService() {
                 if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_TIMEOUT")
                   SparkLogger.w(TAG, "CONFIRMING_ACCEPT: timeout — neither Start Trip nor unavailable detected, resuming monitoring")
                 broadcastStatus("Accept confirmation timed out — monitoring resumed")
+                stuckOtherSinceMs = 0L
                 isMonitoring = true
                 state = State.IDLE
             }
@@ -1122,6 +1175,7 @@ class SparkAccessibilityService : AccessibilityService() {
                 if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPT_TIMEOUT")
                   SparkLogger.w(TAG, "ACCEPTING: 30s timeout — accept flow stuck, resetting IDLE")
                 broadcastStatus("Accept timed out — watching for next offer")
+                stuckOtherSinceMs = 0L
                 state = State.IDLE
             }
         }
