@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider paths for sharing the debug log file.
+    files-path maps to context.filesDir (internal storage).
+-->
+<paths>
+    <files-path name="logs" path="logs/" />
+    <external-files-path name="csv" path="." />
+</paths>

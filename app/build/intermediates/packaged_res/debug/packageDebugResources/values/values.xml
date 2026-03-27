@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="overlay_background">#CC000000</color>
+    <color name="spark_blue">#0071CE</color>
+    <color name="spark_dark">#1A1A2E</color>
+    <color name="spark_green">#00C853</color>
+    <color name="spark_red">#FF1744</color>
+    <color name="spark_surface">#16213E</color>
+    <color name="spark_yellow">#FFC220</color>
+    <color name="text_secondary">#B0BEC5</color>
+    <color name="white">#FFFFFF</color>
+    <string name="accessibility_service_description">Tempo monitors the Spark Driver app for delivery offers. When an offer appears, it automatically opens the details and shows you the hourly rate so you can decide quickly.</string>
+    <string name="accessibility_service_label">Tempo Background Service</string>
+    <string name="app_name">Tempo</string>
+    <string name="enable_service">Enable Accessibility Service</string>
+    <string name="grant_overlay">Grant Overlay Permission</string>
+    <string name="hourly_tip_label">Hourly Tip Rate</string>
+    <string name="overlay_dismiss">Dismiss</string>
+    <string name="overlay_permission_needed">Overlay Permission Needed</string>
+    <string name="service_active">Service Active</string>
+    <string name="service_inactive">Service Inactive</string>
+    <string name="status_offer_found">Offer found! Opening details…</string>
+    <string name="status_waiting">Waiting for Spark offer…</string>
+    <style name="Theme.Tempo" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">@color/spark_blue</item>
+        <item name="colorPrimaryVariant">@color/spark_dark</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/spark_yellow</item>
+        <item name="colorOnSecondary">@color/spark_dark</item>
+        <item name="android:windowBackground">@color/spark_dark</item>
+        <item name="android:statusBarColor">@color/spark_surface</item>
+    </style>
+</resources>
