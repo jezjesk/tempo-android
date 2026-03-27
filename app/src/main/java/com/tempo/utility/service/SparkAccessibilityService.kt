@@ -171,6 +171,7 @@ class SparkAccessibilityService : AccessibilityService() {
     @Volatile private var lastDetailRejectAttemptTime = Long.MAX_VALUE
     @Volatile private var lastGotItTapMs = 0L
     private var lastRejectConfirmTapMs = 0L
+    private var rejectConfirmSheetFirstSeenMs = 0L
 
     // Offer deduplication — skip CSV write if we see the same offer within DEDUP_WINDOW_MS
     private data class OfferKey(val sparkPay: Double, val tip: Double, val timeMin: Double)
@@ -461,16 +462,28 @@ class SparkAccessibilityService : AccessibilityService() {
                     }
                     AppScreen.OTHER -> {
                         // Priority 1: rejection confirmation sheet (rejectThisOfferButton)
+                        // Wait 300 ms after the sheet first appears so the slide-up animation
+                        // finishes before we tap — eliminates the double-tap caused by the
+                        // button moving while the sheet is still animating.
                         val rejectConfirm = findNodeById(root, ID_REJECT_CONFIRM_BUTTON)
                         if (rejectConfirm != null) {
-                            val nowRc = System.currentTimeMillis()
-                            if (nowRc - lastRejectConfirmTapMs > 600L) {
-                                lastRejectConfirmTapMs = nowRc
-                                tapNode(rejectConfirm)
-                                SparkLogger.i(TAG, "REJECTING: confirmation sheet — gesture tap on rejectThisOfferButton")
-                            } else {
-                                SparkLogger.d(TAG, "REJECTING: rejectThisOfferButton debounced (${nowRc - lastRejectConfirmTapMs}ms)")
+                            val now = System.currentTimeMillis()
+                            if (rejectConfirmSheetFirstSeenMs == 0L) {
+                                rejectConfirmSheetFirstSeenMs = now
+                                SparkLogger.d(TAG, "REJECTING: confirmation sheet appeared — waiting 300ms for animation to settle")
                             }
+                            val sheetAge = now - rejectConfirmSheetFirstSeenMs
+                            if (sheetAge >= 300L && lastRejectConfirmTapMs == 0L) {
+                                lastRejectConfirmTapMs = now
+                                tapNode(rejectConfirm)
+                                SparkLogger.i(TAG, "REJECTING: sheet settled (${sheetAge}ms) — tapping rejectThisOfferButton")
+                            } else if (lastRejectConfirmTapMs == 0L) {
+                                SparkLogger.d(TAG, "REJECTING: sheet still animating (${sheetAge}ms / 300ms) — waiting")
+                            }
+                            rejectConfirm.recycle()
+                            broadcastStatus("Confirming rejection…")
+                            return
+                        }
                             rejectConfirm.recycle()
                             broadcastStatus("Confirming rejection…")
                             // Stay REJECTING — HOME_SEARCHING will confirm the offer is gone
@@ -485,6 +498,8 @@ class SparkAccessibilityService : AccessibilityService() {
                             tapGotItWithRetry(gotIt)
                             gotIt.recycle()
                             cancelAutoRejectTimeout()
+                            rejectConfirmSheetFirstSeenMs = 0L
+                            lastRejectConfirmTapMs         = 0L
                             state = State.IDLE
                             broadcastStatus("Offer unavailable — watching for next offer")
                             return
@@ -497,6 +512,8 @@ class SparkAccessibilityService : AccessibilityService() {
                         cancelAutoRejectTimeout()
                         if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("REJECTED")
                           SparkLogger.i(TAG, "REJECTING: HOME_SEARCHING — offer gone, resetting IDLE")
+                        rejectConfirmSheetFirstSeenMs = 0L
+                        lastRejectConfirmTapMs         = 0L
                         state = State.IDLE
                         broadcastStatus("Offer rejected — watching for next offer")
                     }
@@ -505,6 +522,8 @@ class SparkAccessibilityService : AccessibilityService() {
                         // but handle it gracefully so we don't get stuck.
                         SparkLogger.w(TAG, "REJECTING: unexpected HOME_OFFER — resetting IDLE (timeout will not be needed)")
                         cancelAutoRejectTimeout()
+                        rejectConfirmSheetFirstSeenMs = 0L
+                        lastRejectConfirmTapMs         = 0L
                         state = State.IDLE
                     }
                 }
@@ -1178,6 +1197,8 @@ class SparkAccessibilityService : AccessibilityService() {
                 if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("REJECT_TIMEOUT")
                   SparkLogger.w(TAG, "REJECTING: timeout — reject button never found after ${AUTO_REJECT_TIMEOUT_MS / 1000}s, resetting IDLE")
                 broadcastStatus("Reject timed out — watching for next offer")
+                rejectConfirmSheetFirstSeenMs = 0L
+                lastRejectConfirmTapMs         = 0L
                 state = State.IDLE
                 lastWaitingLogTime = 0L
             }
