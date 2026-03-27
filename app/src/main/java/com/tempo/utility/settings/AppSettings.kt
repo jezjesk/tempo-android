@@ -38,7 +38,7 @@ object AppSettings {
     const val DEFAULT_MIN_PAY_HOURLY    = 35.0f
     const val DEFAULT_MAX_DISTANCE          = 200.0f
     const val DEFAULT_MIN_DOLLARS_PER_MILE  = 3.0f
-    const val DEFAULT_QUICK_MIN_HOURLY     = 50.0f
+    const val DEFAULT_QUICK_MIN_HOURLY     = 40.0f
 
     const val DEFAULT_DELAY_DETAILS_MIN = 0L
     const val DEFAULT_DELAY_DETAILS_MAX = 0L
@@ -86,8 +86,12 @@ object AppSettings {
      * Every criterion is evaluated literally (0 means 0, not "skip").
      */
     fun meetsAllCriteria(details: OfferDetails): Boolean {
-        if (details.tipPay    < minTipAmount) return false
-        if (details.tipHourly < minTipHourly) return false
+        // Tip criteria are skipped when the tip has not yet been confirmed by the customer.
+        // PENDING tips show a partial amount that does not reflect the final value.
+        if (details.tipStatus != "PENDING") {
+            if (details.tipPay    < minTipAmount) return false
+            if (details.tipHourly < minTipHourly) return false
+        }
         if (details.totalPay  < minTotalPay)  return false
         if (details.payHourly < minPayHourly) return false
         val dist = details.distanceMiles
