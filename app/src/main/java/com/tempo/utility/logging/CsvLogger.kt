@@ -99,6 +99,59 @@ object CsvLogger {
        * Updates the ActionResult field of the most recently written CSV row.
        * Called once the accept/reject outcome is confirmed so the row reflects
        * what actually happened rather than the initial PENDING placeholder.
+
+    /**
+     * Records a home-screen pre-rejected offer — one rejected before opening the detail
+     * screen, so tip/store/type are unknown.  Blank CSV cells mark unknown fields.
+     * Sets ActionResult to [actionResult] (defaults to "PENDING" so the subsequent
+     * REJECTING-state cleanup can overwrite it with "REJECTED").
+     */
+    fun appendHomeCard(
+        total: Double,
+        distMi: Double?,
+        timMin: Double,
+        criteriaResult: String,
+        actionResult: String = "PENDING"
+    ) {
+        val file = csvFile ?: run {
+            SparkLogger.e(TAG, "appendHomeCard: CsvLogger not initialized")
+            return
+        }
+        val miles     = distMi ?: 0.0
+        val realMin   = timMin + miles * 2.0
+        val caMin     = (16.9 * 1.2 / 60.0) * timMin + (0.3 * miles)
+        val sparkPay  = maxOf(caMin, total)
+        val payHourly = if (realMin > 0) (total / realMin) * 60.0 else 0.0
+        val perMile   = if (miles > 0) total / miles else 0.0
+        val row = buildString {
+            append(ts.format(Date())); append(",")
+            append(String.format("%.2f", total)); append(",")
+            append(""); append(",")   // DeliveryPay — unknown
+            append(""); append(",")   // ExtraEarnings — unknown
+            append(""); append(",")   // TipPay — unknown
+            append(distMi?.let { String.format("%.2f", it) } ?: ""); append(",")
+            append(String.format("%.1f", timMin)); append(",")
+            append(String.format("%.2f", realMin)); append(",")
+            append(String.format("%.2f", caMin)); append(",")
+            append(String.format("%.2f", sparkPay)); append(",")
+            append(String.format("%.2f", total)); append(",")   // TotalPay ≈ total (no tip data)
+            append(String.format("%.2f", payHourly)); append(",")
+            append(""); append(",")   // TipHourly — unknown
+            append(String.format("%.2f", perMile)); append(",")
+            append(""); append(",")   // PickupType — unknown
+            append(""); append(",")   // OfferType — unknown
+            append(""); append(",")   // PickupStore — unknown
+            append(criteriaResult); append(",")
+            append(actionResult)
+            append("\n")
+        }
+        try {
+            file.appendText(row)
+            SparkLogger.i(TAG, "Recorded home-card offer → $row".trimEnd())
+        } catch (e: Exception) {
+            SparkLogger.e(TAG, "appendHomeCard: failed to write row", e)
+        }
+    }
        */
     fun updateLastActionResult(result: String) {
         val file = csvFile ?: return
