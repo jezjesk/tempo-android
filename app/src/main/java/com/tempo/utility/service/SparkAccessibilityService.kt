@@ -539,13 +539,11 @@ class SparkAccessibilityService : AccessibilityService() {
                         broadcastStatus("Offer rejected — watching for next offer")
                     }
                     AppScreen.HOME_OFFER -> {
-                        // Shouldn't occur since we never navigate away from DETAIL during rejection,
-                        // but handle it gracefully so we don't get stuck.
-                        SparkLogger.w(TAG, "REJECTING: unexpected HOME_OFFER — resetting IDLE (timeout will not be needed)")
-                        cancelAutoRejectTimeout()
-                        rejectConfirmSheetFirstSeenMs = 0L
-                        lastRejectConfirmTapMs         = 0L
-                        state = State.IDLE
+                        // A content-changed event fires immediately after tapping rejectionButton
+                        // while the home card is still visible but animating away.  Resetting to
+                        // IDLE here caused the reject-confirmation sheet to appear unhandled.
+                        // Stay in REJECTING — the sheet will arrive as an OTHER screen shortly.
+                        SparkLogger.d(TAG, "REJECTING: HOME_OFFER content event — staying REJECTING, waiting for confirmation sheet")
                     }
                 }
             }
