@@ -96,15 +96,10 @@ object CsvLogger {
     }
 
     /**
-       * Updates the ActionResult field of the most recently written CSV row.
-       * Called once the accept/reject outcome is confirmed so the row reflects
-       * what actually happened rather than the initial PENDING placeholder.
-
-    /**
      * Records a home-screen pre-rejected offer — one rejected before opening the detail
      * screen, so tip/store/type are unknown.  Blank CSV cells mark unknown fields.
-     * Sets ActionResult to [actionResult] (defaults to "PENDING" so the subsequent
-     * REJECTING-state cleanup can overwrite it with "REJECTED").
+     * ActionResult defaults to "PENDING" so the REJECTING-state cleanup can overwrite
+     * it with "REJECTED" via updateLastActionResult().
      */
     fun appendHomeCard(
         total: Double,
@@ -152,7 +147,12 @@ object CsvLogger {
             SparkLogger.e(TAG, "appendHomeCard: failed to write row", e)
         }
     }
-       */
+
+    /**
+     * Updates the ActionResult field of the most recently written CSV row.
+     * Called once the accept/reject outcome is confirmed so the row reflects
+     * what actually happened rather than the initial PENDING placeholder.
+     */
     fun updateLastActionResult(result: String) {
         val file = csvFile ?: return
         try {
