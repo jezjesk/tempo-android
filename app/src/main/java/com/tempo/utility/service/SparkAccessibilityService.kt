@@ -496,19 +496,40 @@ class SparkAccessibilityService : AccessibilityService() {
                             val now = System.currentTimeMillis()
                             if (rejectConfirmSheetFirstSeenMs == 0L) {
                                 rejectConfirmSheetFirstSeenMs = now
-                                SparkLogger.d(TAG, "REJECTING: confirmation sheet appeared — waiting 300ms for animation to settle")
+                                SparkLogger.d(TAG, "REJECTING: confirmation sheet appeared — scheduling guaranteed tap in 350ms")
+                                // Spark often goes quiet after the sheet slides up, so the event-driven
+                                // 300 ms path may never fire.  Guarantee a tap via tapHandler regardless.
+                                tapHandler.postDelayed({
+                                    if (state != State.REJECTING) return@postDelayed
+                                    val tapRoot = rootInActiveWindow ?: return@postDelayed
+                                    val btn = findNodeById(tapRoot, ID_REJECT_CONFIRM_BUTTON)
+                                    tapRoot.recycle()
+                                    mainHandler.post {
+                                        if (lastRejectConfirmTapMs != 0L) return@post
+                                        val age = System.currentTimeMillis() - rejectConfirmSheetFirstSeenMs
+                                        if (btn != null) {
+                                            SparkLogger.i(TAG, "REJECTING: postDelayed tap — sheet ${age}ms old, tapping rejectThisOfferButton")
+                                            tapNode(btn)
+                                            btn.recycle()
+                                            lastRejectConfirmTapMs = System.currentTimeMillis()
+                                        } else {
+                                            SparkLogger.w(TAG, "REJECTING: postDelayed tap — rejectThisOfferButton not found (sheet gone?)")
+                                        }
+                                    }
+                                }, 350L)
                             }
                             val sheetAge = now - rejectConfirmSheetFirstSeenMs
                             if (sheetAge >= 300L && lastRejectConfirmTapMs == 0L) {
                                 lastRejectConfirmTapMs = now
                                 tapNode(rejectConfirm)
-                                SparkLogger.i(TAG, "REJECTING: sheet settled (${sheetAge}ms) — tapping rejectThisOfferButton")
+                                SparkLogger.i(TAG, "REJECTING: sheet settled (${sheetAge}ms) — tapping rejectThisOfferButton (event-driven)")
                             } else if (lastRejectConfirmTapMs == 0L) {
                                 SparkLogger.d(TAG, "REJECTING: sheet still animating (${sheetAge}ms / 300ms) — waiting")
                             }
                             rejectConfirm.recycle()
                             broadcastStatus("Confirming rejection…")
                             return
+                        }
                         }
                         // Priority 2: "Offer unavailable" / expiry modal
                         val gotIt = findNodeById(root, ID_GOT_IT_BUTTON)
