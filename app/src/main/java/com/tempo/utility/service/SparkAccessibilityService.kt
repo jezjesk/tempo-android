@@ -530,7 +530,6 @@ class SparkAccessibilityService : AccessibilityService() {
                             broadcastStatus("Confirming rejection…")
                             return
                         }
-                        }
                         // Priority 2: "Offer unavailable" / expiry modal
                         val gotIt = findNodeById(root, ID_GOT_IT_BUTTON)
                             ?: findClickableByText(root, listOf("got it"))
