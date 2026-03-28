@@ -314,6 +314,18 @@ class SparkAccessibilityService : AccessibilityService() {
                         scrapeAndRecord(root)
                     }
                     else -> {
+                        // Orphaned rejection-confirmation sheet: arrives in IDLE when the home
+                        // card disappeared (HOME_SEARCHING) before the confirmation sheet (OTHER),
+                        // so REJECTING reset to IDLE before the sheet was detected.
+                        if (screen == AppScreen.OTHER) {
+                            val orphanedSheet = findNodeById(root, ID_REJECT_CONFIRM_BUTTON)
+                            if (orphanedSheet != null) {
+                                SparkLogger.i(TAG, "IDLE: orphaned rejection-confirmation sheet — tapping rejectThisOfferButton")
+                                tapNode(orphanedSheet)
+                                orphanedSheet.recycle()
+                                return
+                            }
+                        }
                         val now = System.currentTimeMillis()
                         if (now - lastWaitingLogTime > 15_000) {
                             SparkLogger.d(TAG, "IDLE: screen=$screen — watching for offers…")
