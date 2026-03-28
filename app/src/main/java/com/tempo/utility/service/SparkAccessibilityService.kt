@@ -835,6 +835,9 @@ class SparkAccessibilityService : AccessibilityService() {
           tapNode(rejectBtn)
           rejectBtn.recycle()
 
+          CsvLogger.appendHomeCard(total, distMi, timMin, "FAIL")
+          lastOfferCsvWritten = true
+
           state = State.REJECTING
           rejectConfirmSheetFirstSeenMs = 0L
           lastRejectConfirmTapMs        = 0L
