@@ -169,7 +169,6 @@ class SparkAccessibilityService : AccessibilityService() {
     /** Sentinel Long.MAX_VALUE = initial delay not yet fired; else = timestamp of last reject attempt.
      *  Written from tapHandler (background thread), read from mainHandler — must be @Volatile. */
     @Volatile private var lastDetailRejectAttemptTime = Long.MAX_VALUE
-    @Volatile private var lastGotItTapMs = 0L
     private var lastRejectConfirmTapMs = 0L
     private var rejectConfirmSheetFirstSeenMs = 0L
     private var stuckOtherSinceMs        = 0L   // escape hatch: unrecognized OTHER in ACCEPTING/CONFIRMING_ACCEPT
@@ -381,8 +380,8 @@ class SparkAccessibilityService : AccessibilityService() {
                         if (getItSuccess != null) {
                             SparkLogger.i(TAG, "ACCEPTING: 'You got it!' confirmation — accept succeeded, pausing monitoring")
                             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPTED")
-                            tapNode(getItSuccess)
                             getItSuccess.recycle()
+                            tapWhenOnScreen(ID_GET_IT_BUTTON)
                             cancelAcceptingTimeout()
                             stuckOtherSinceMs = 0L
                             isMonitoring = false
@@ -397,8 +396,8 @@ class SparkAccessibilityService : AccessibilityService() {
                         if (gotIt != null) {
                             SparkLogger.i(TAG, "ACCEPTING: offer-unavailable dialog — tapping Got It, resetting IDLE")
                             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("TOO_SLOW")
-                            tapGotItWithRetry(gotIt)
-                              gotIt.recycle()
+                            gotIt.recycle()
+                            tapWhenOnScreen(ID_GOT_IT_BUTTON)
                               cancelAcceptingTimeout()
                               stuckOtherSinceMs = 0L
                               state = State.IDLE
@@ -517,8 +516,8 @@ class SparkAccessibilityService : AccessibilityService() {
                         if (gotIt != null) {
                             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("REJECT_EXPIRED")
                               SparkLogger.i(TAG, "REJECTING: offer-unavailable dialog — tapping Got It, resetting IDLE")
-                            tapGotItWithRetry(gotIt)
                             gotIt.recycle()
+                            tapWhenOnScreen(ID_GOT_IT_BUTTON)
                             cancelAutoRejectTimeout()
                             rejectConfirmSheetFirstSeenMs = 0L
                             lastRejectConfirmTapMs         = 0L
@@ -1185,8 +1184,8 @@ class SparkAccessibilityService : AccessibilityService() {
         if (getItSuccess != null) {
             SparkLogger.i(TAG, "CONFIRMING_ACCEPT: 'You got it!' confirmation — accept succeeded, pausing monitoring")
             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("ACCEPTED")
-            tapNode(getItSuccess)
             getItSuccess.recycle()
+            tapWhenOnScreen(ID_GET_IT_BUTTON)
             cancelConfirmAcceptTimeout()
             stuckOtherSinceMs = 0L
             isMonitoring = false
@@ -1202,8 +1201,8 @@ class SparkAccessibilityService : AccessibilityService() {
         if (gotIt != null) {
             if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("TOO_SLOW")
             SparkLogger.i(TAG, "CONFIRMING_ACCEPT: offer-unavailable dialog — accept failed, resuming monitoring")
-            tapGotItWithRetry(gotIt)
             gotIt.recycle()
+            tapWhenOnScreen(ID_GOT_IT_BUTTON)
             cancelConfirmAcceptTimeout()
             stuckOtherSinceMs = 0L
             isMonitoring = true
@@ -1931,26 +1930,60 @@ class SparkAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Taps the "GOT IT" button and schedules a 1500ms retry for Samsung devices
-     * where dispatchGesture() is queued and may take 20+ seconds to execute.
-     * The retry checks if the button is still visible and re-taps if so.
+     * Waits for [nodeId] to fully slide on-screen (bounds.left ≥ 0 — bottom-sheet animation
+     * complete), then taps. Polls every 200 ms for up to [maxAttempts] attempts.
+     * After tapping, re-checks after 1200 ms and retaps if the button is still visible
+     * (Samsung gesture-dispatcher queue mitigation).
      */
-    private fun tapGotItWithRetry(gotIt: AccessibilityNodeInfo) {
-        lastGotItTapMs = System.currentTimeMillis()
-        tapNode(gotIt)
+    private fun tapWhenOnScreen(
+        nodeId: String,
+        maxAttempts: Int = 12,
+        attempt: Int = 0
+    ) {
+        val root = rootInActiveWindow ?: run {
+            if (attempt < maxAttempts)
+                tapHandler.postDelayed({ tapWhenOnScreen(nodeId, maxAttempts, attempt + 1) }, 200L)
+            return
+        }
+        val node = findNodeById(root, nodeId)
+        root.recycle()
+        if (node == null) {
+            if (attempt < maxAttempts)
+                tapHandler.postDelayed({ tapWhenOnScreen(nodeId, maxAttempts, attempt + 1) }, 200L)
+            else SparkLogger.w(TAG, "tapWhenOnScreen: $nodeId never appeared (gave up after $maxAttempts polls)")
+            return
+        }
+        val rect = Rect()
+        node.getBoundsInScreen(rect)
+        node.recycle()
+        if (rect.left < 0 || rect.isEmpty || rect.width() <= 2) {
+            SparkLogger.d(TAG, "tapWhenOnScreen: $nodeId still off-screen (left=${rect.left}, attempt $attempt) — waiting 200ms")
+            if (attempt < maxAttempts)
+                tapHandler.postDelayed({ tapWhenOnScreen(nodeId, maxAttempts, attempt + 1) }, 200L)
+            else SparkLogger.w(TAG, "tapWhenOnScreen: $nodeId never reached on-screen (gave up)")
+            return
+        }
+        val freshRoot = rootInActiveWindow ?: return
+        val freshNode = findNodeById(freshRoot, nodeId)
+        freshRoot.recycle()
+        if (freshNode == null) {
+            SparkLogger.d(TAG, "tapWhenOnScreen: $nodeId vanished before tap — skipping")
+            return
+        }
+        SparkLogger.i(TAG, "tapWhenOnScreen: $nodeId on-screen after $attempt polls — tapping")
+        tapNode(freshNode)
+        freshNode.recycle()
         tapHandler.postDelayed({
-            if (System.currentTimeMillis() - lastGotItTapMs < 1200L) return@postDelayed
-            val freshRoot = rootInActiveWindow ?: return@postDelayed
-            val freshGotIt = findNodeById(freshRoot, ID_GOT_IT_BUTTON)
-                ?: findClickableByText(freshRoot, listOf("got it"))
-            if (freshGotIt != null) {
-                SparkLogger.w(TAG, "tapGotItWithRetry: button still present after 1500ms — retapping (Samsung gesture queue)")
-                lastGotItTapMs = System.currentTimeMillis()
-                tapNode(freshGotIt)
-                freshGotIt.recycle()
+            val retryRoot = rootInActiveWindow ?: return@postDelayed
+            val retryNode = findNodeById(retryRoot, nodeId)
+                ?: findClickableByText(retryRoot, listOf("got it"))
+            retryRoot.recycle()
+            if (retryNode != null) {
+                SparkLogger.w(TAG, "tapWhenOnScreen: $nodeId still present after 1200ms — retapping (Samsung gesture queue)")
+                tapNode(retryNode)
+                retryNode.recycle()
             }
-            freshRoot.recycle()
-        }, 1500L)
+        }, 1200L)
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1977,8 +2010,8 @@ class SparkAccessibilityService : AccessibilityService() {
         val marginY  = (rect.height() * 0.2f).toInt().coerceAtLeast(1)
         val rangeX   = (rect.width()  - 2 * marginX).coerceAtLeast(1)
         val rangeY   = (rect.height() - 2 * marginY).coerceAtLeast(1)
-        val x        = (rect.left + marginX + Random.nextInt(rangeX)).toFloat()
-        val y        = (rect.top  + marginY + Random.nextInt(rangeY)).toFloat()
+        val x        = (rect.left + marginX + Random.nextInt(rangeX)).toFloat().coerceAtLeast(0f)
+        val y        = (rect.top  + marginY + Random.nextInt(rangeY)).toFloat().coerceAtLeast(0f)
         val duration = (80L + Random.nextInt(71))   // 80–150 ms
 
         SparkLogger.i(TAG, "tapNode: gesture at (${x}, ${y}) dur=${duration}ms")
