@@ -757,11 +757,6 @@ class SparkAccessibilityService : AccessibilityService() {
        * Rejects an offer directly from the home card without opening the detail screen.
        * Fires when the estimated hourly rate OR estimated total falls below
        * [homeRejectThreshold]% of the full criteria — i.e., clearly not worth opening.
-
-      /**
-       * Rejects an offer directly from the home card without opening the detail screen.
-       * Fires when the estimated hourly rate OR estimated total falls below
-       * [homeRejectThreshold]% of the full criteria — i.e., clearly not worth opening.
        *
        * Threshold is user-configurable (0 = disabled, 60 = default, 100 = reject at full criteria).
        * Uses pre-parsed HomeCardValues from parseHomeCardValues() — no redundant tree traversal.
