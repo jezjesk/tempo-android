@@ -390,7 +390,18 @@ class SparkAccessibilityService : AccessibilityService() {
                             playChime()
                             return
                         }
-                        // Priority 2: "Offer unavailable" / expiry error dialog (gotItButton or text)
+                        // Priority 2: orphaned rejection-confirmation sheet — arrives in IDLE when the home
+                        // card disappears (HOME_SEARCHING) before the sheet (OTHER), causing REJECTING to
+                        // reset to IDLE before the sheet is detected.
+                        val rejectConfirmFallback = findNodeById(root, ID_REJECT_CONFIRM_BUTTON)
+                        if (rejectConfirmFallback != null) {
+                            SparkLogger.i(TAG, "IDLE: orphaned rejection-confirmation sheet — tapping rejectThisOfferButton")
+                            tapNode(rejectConfirmFallback)
+                            rejectConfirmFallback.recycle()
+                            stuckOtherSinceMs = 0L
+                            return
+                        }
+                        // Priority 3: "Offer unavailable" / expiry error dialog (gotItButton or text)
                         val gotIt = findNodeById(root, ID_GOT_IT_BUTTON)
                             ?: findClickableByText(root, listOf("got it"))
                         if (gotIt != null) {
