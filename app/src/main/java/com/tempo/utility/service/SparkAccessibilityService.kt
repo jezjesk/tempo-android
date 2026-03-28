@@ -100,7 +100,7 @@ class SparkAccessibilityService : AccessibilityService() {
         // Confirmed (2026-03-24): "Just for you" appears as a title node on the detail screen.
         val JFY_KEYWORDS = listOf("just for you", "reserved for you", "exclusive")
 
-        private const val TAP_DEBOUNCE_MS           = 4_000L
+        private const val TAP_DEBOUNCE_MS           = 1_000L
         private const val CONFIRM_ACCEPT_TIMEOUT   = 20_000L
         private const val DEDUP_WINDOW_MS          = 5 * 60 * 1_000L  // 5 min
         private const val TAPPING_CARD_TIMEOUT_MS  = 15_000L    // give up on detail opening after 15 s
@@ -251,8 +251,16 @@ class SparkAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Only log event types that signal a meaningful UI change (not every scroll/content tick)
+        // Filter: only process event types that signal meaningful UI changes.
+        // Scroll ticks, text-change, and focus events fire constantly and add noise.
         val eventType = event.eventType
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_VIEW_CLICKED &&
+            eventType != AccessibilityEvent.TYPE_ANNOUNCEMENT) {
+            return
+        }
+
         if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             eventType == AccessibilityEvent.TYPE_ANNOUNCEMENT) {
             SparkLogger.d(TAG, "Spark event: ${AccessibilityEvent.eventTypeToString(eventType)} | class=${event.className}")
@@ -576,14 +584,7 @@ class SparkAccessibilityService : AccessibilityService() {
     // ──────────────────────────────────────────────────────────────────────────
 
     private fun handleOfferOnHomeScreen(root: AccessibilityNodeInfo) {
-        val now = System.currentTimeMillis()
-        if (now - lastTapTime < TAP_DEBOUNCE_MS) {
-            val remaining = TAP_DEBOUNCE_MS - (now - lastTapTime)
-            SparkLogger.d(TAG, "Offer found but debouncing — ${remaining}ms left")
-            return
-        }
-
-        SparkLogger.i(TAG, "HOME_OFFER: offer card detected — finding tap target")
+        SparkLogger.i(TAG, "HOME_OFFER: offer card detected — evaluating")
 
         // Guard: an accepted trip card looks identical to an offer card (same $XX.XX estimate
         // text and clickableLayout) but has ctaButton ("START TRIP") instead of rejectionButton
@@ -606,11 +607,21 @@ class SparkAccessibilityService : AccessibilityService() {
             }
         }
 
+        // Parse home card values once — shared by tryQuickAccept and tryQuickReject.
+        val hcv = parseHomeCardValues(root)
+
         // Quick Mode: if enabled, try to accept directly from home card without opening detail
-        if (AppSettings.quickModeEnabled && tryQuickAccept(root)) return
+        if (AppSettings.quickModeEnabled && tryQuickAccept(root, hcv)) return
 
         // Home pre-reject: if threshold > 0 and offer is clearly below criteria, reject from home card
-        if (tryQuickReject(root)) return
+        if (tryQuickReject(root, hcv)) return
+
+        // Debounce the card tap to prevent double-opening the same card.
+        val now = System.currentTimeMillis()
+        if (now - lastTapTime < TAP_DEBOUNCE_MS) {
+            SparkLogger.d(TAG, "HOME_OFFER: card-tap debouncing — ${TAP_DEBOUNCE_MS - (now - lastTapTime)}ms left")
+            return
+        }
 
         // Strategy: find the node with "estimate" text, walk up to its clickable ancestor
         val tapTarget = findOfferCardTapTarget(root)
@@ -642,10 +653,40 @@ class SparkAccessibilityService : AccessibilityService() {
      *  4. Within that child, find the best clickable (not ACCEPT/REJECT)
      *  5. If no clickable found, return the item itself for a gesture tap at its center
      */
+    // ── Home card shared parsing ─────────────────────────────────────────────
+    /**
+     * Parsed home-card values — shared between tryQuickAccept and tryQuickReject.
+     * Avoids double tree traversal when both functions evaluate the same offer.
+     */
+    private data class HomeCardValues(val total: Double, val distMi: Double?, val timMin: Double)
+
+    /**
+     * Reads estimateValue, distance, and time nodes from the home card once.
+     * Returns null if any critical field (total or time) is missing or unparseable.
+     */
+    private fun parseHomeCardValues(root: AccessibilityNodeInfo): HomeCardValues? {
+        val estNode  = findNodeById(root, ID_ESTIMATE_VALUE_HOME)
+        val distNode = findNodeById(root, ID_DISTANCE)
+        val timeNode = findNodeById(root, ID_TIME)
+        val rawEst  = estNode?.text?.toString()?.trim();  estNode?.recycle()
+        val rawDist = distNode?.text?.toString()?.trim(); distNode?.recycle()
+        val rawTime = timeNode?.text?.toString()?.trim(); timeNode?.recycle()
+        val total  = rawEst?.removePrefix("$")?.toDoubleOrNull() ?: return null
+        val distMi = rawDist?.let { Regex("""[0-9]+\.?[0-9]*""").find(it)?.value?.toDoubleOrNull() }
+        val timMin = rawTime?.let {
+            val hrs  = Regex("""(\d+)\s*hr""").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+            val mins = Regex("""(\d+)\s*min""").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+            val t    = hrs * 60.0 + mins
+            if (t > 0) t else null
+        } ?: return null
+        SparkLogger.d(TAG, "parseHomeCard: total=${String.format("%.2f", total)} distMi=${distMi?.let { String.format("%.1f", it) } ?: "n/a"} timMin=${String.format("%.1f", timMin)}")
+        return HomeCardValues(total, distMi, timMin)
+    }
+
     // ── Quick Mode ────────────────────────────────────────────────────────────
     /**
      * Attempts to accept the offer directly from the home card without opening the detail screen.
-     * Reads estimateValue, distance, and time nodes by resource ID.
+     * Accepts pre-parsed HomeCardValues from parseHomeCardValues() to avoid re-traversing the tree.
      *
      * Criteria (all three must pass):
      *   1. (total / timeMin) × 60 ≥ quickMinHourly
@@ -654,33 +695,15 @@ class SparkAccessibilityService : AccessibilityService() {
      *
      * Returns true if a quick-accept tap was dispatched, false otherwise.
      */
-    private fun tryQuickAccept(root: AccessibilityNodeInfo): Boolean {
-        // Fetch the three home-card value nodes directly by resource ID
-        val estNode  = findNodeById(root, ID_ESTIMATE_VALUE_HOME)
-        val distNode = findNodeById(root, ID_DISTANCE)
-        val timeNode = findNodeById(root, ID_TIME)
+    private fun tryQuickAccept(root: AccessibilityNodeInfo, hcv: HomeCardValues?): Boolean {
+        if (hcv == null) { SparkLogger.d(TAG, "quickMode: no home card data — skipping quick accept"); return false }
+        val total  = hcv.total
+        val distMi = hcv.distMi
+        val timMin = hcv.timMin
 
-        val rawEst  = estNode?.text?.toString()?.trim();  estNode?.recycle()
-        val rawDist = distNode?.text?.toString()?.trim(); distNode?.recycle()
-        val rawTime = timeNode?.text?.toString()?.trim(); timeNode?.recycle()
+        if (distMi == null || distMi <= 0) { SparkLogger.d(TAG, "quickMode: no distMi — skipping"); return false }
 
-        SparkLogger.d(TAG, "quickMode: home card IDs — est='$rawEst' dist='$rawDist' time='$rawTime'")
-
-        // Parse estimated total: "$35.27" → 35.27
-        val total = rawEst?.removePrefix("$")?.toDoubleOrNull()
-
-        // Parse distance: "• 4.3 miles" → 4.3
-        val distMi = rawDist?.let { Regex("[0-9]+\\.?[0-9]*").find(it)?.value?.toDoubleOrNull() }
-
-        // Parse time: "• 47 mins" → 47.0   "• 1 hr, 1 min" → 61.0
-        val timMin = rawTime?.let {
-            val hrs  = Regex("(\\d+)\\s*hr").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-            val mins = Regex("(\\d+)\\s*min").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-            val t    = hrs * 60.0 + mins
-            if (t > 0) t else null
-        }
-
-        SparkLogger.i(TAG, "quickMode: parsed total=${total?.let { String.format("%.2f", it) }} distMi=${distMi?.let { String.format("%.1f", it) }} timeMin=${timMin?.let { String.format("%.1f", it) }}")
+        SparkLogger.d(TAG, "quickMode: total=${String.format("%.2f", total)} distMi=${String.format("%.1f", distMi)} timMin=${String.format("%.1f", timMin)}")
 
         if (total == null || distMi == null || timMin == null || timMin <= 0 || distMi <= 0) {
             SparkLogger.d(TAG, "quickMode: insufficient ID data — skipping quick accept")
@@ -734,35 +757,26 @@ class SparkAccessibilityService : AccessibilityService() {
        * Rejects an offer directly from the home card without opening the detail screen.
        * Fires when the estimated hourly rate OR estimated total falls below
        * [homeRejectThreshold]% of the full criteria — i.e., clearly not worth opening.
+
+      /**
+       * Rejects an offer directly from the home card without opening the detail screen.
+       * Fires when the estimated hourly rate OR estimated total falls below
+       * [homeRejectThreshold]% of the full criteria — i.e., clearly not worth opening.
        *
        * Threshold is user-configurable (0 = disabled, 60 = default, 100 = reject at full criteria).
-       * Uses the same ID-based home-card scrape as tryQuickAccept.
+       * Uses pre-parsed HomeCardValues from parseHomeCardValues() — no redundant tree traversal.
        */
-      private fun tryQuickReject(root: AccessibilityNodeInfo): Boolean {
+      private fun tryQuickReject(root: AccessibilityNodeInfo, hcv: HomeCardValues?): Boolean {
           val threshold = AppSettings.homeRejectThreshold
           if (threshold <= 0.0) return false   // disabled
-
-          val estNode  = findNodeById(root, ID_ESTIMATE_VALUE_HOME)
-          val distNode = findNodeById(root, ID_DISTANCE)
-          val timeNode = findNodeById(root, ID_TIME)
-
-          val rawEst  = estNode?.text?.toString()?.trim();  estNode?.recycle()
-          val rawDist = distNode?.text?.toString()?.trim(); distNode?.recycle()
-          val rawTime = timeNode?.text?.toString()?.trim(); timeNode?.recycle()
-
-          val total  = rawEst?.removePrefix("$")?.toDoubleOrNull()
-          val distMi = rawDist?.let { Regex("[0-9]+\.?[0-9]*").find(it)?.value?.toDoubleOrNull() }
-          val timMin = rawTime?.let {
-              val hrs  = Regex("(\d+)\s*hr").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-              val mins = Regex("(\d+)\s*min").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-              val t    = hrs * 60.0 + mins
-              if (t > 0) t else null
-          }
-
-          if (total == null || timMin == null || timMin <= 0) {
-              SparkLogger.d(TAG, "homeReject: insufficient home-card data — skipping pre-reject")
+          if (hcv == null) {
+              SparkLogger.d(TAG, "homeReject: no home card data — skipping pre-reject")
               return false
           }
+
+          val total  = hcv.total
+          val distMi = hcv.distMi
+          val timMin = hcv.timMin
 
           val realMin     = timMin + (if (distMi != null && distMi > 0) 2.0 * distMi else 0.0)
           val hourlyRate  = (total / realMin) * 60.0
@@ -772,23 +786,28 @@ class SparkAccessibilityService : AccessibilityService() {
           val belowHourly = hourlyRate < hourlyFloor
           val belowTotal  = total      < totalFloor
 
-          SparkLogger.i(TAG, "homeReject: hourly=${String.format("%.2f", hourlyRate)}/hr (floor=${String.format("%.2f", hourlyFloor)}) total=${String.format("%.2f", total)} (floor=${String.format("%.2f", totalFloor)}) threshold=${String.format("%.0f", threshold * 100)}% belowHourly=$belowHourly belowTotal=$belowTotal")
+          val rateStr  = String.format("%.2f", hourlyRate)
+          val rFloor   = String.format("%.2f", hourlyFloor)
+          val totalStr = String.format("%.2f", total)
+          val tFloor   = String.format("%.2f", totalFloor)
+          val pctStr   = String.format("%.0f", threshold * 100)
+          SparkLogger.i(TAG, "homeReject: $rateStr/hr (floor $rFloor) total $totalStr (floor $tFloor) thr=$pctStr% belowHourly=$belowHourly belowTotal=$belowTotal")
 
           if (!belowHourly && !belowTotal) return false
 
           val rejectBtn = findNodeById(root, ID_REJECTION_BUTTON_HOME)
           if (rejectBtn == null) {
-              SparkLogger.w(TAG, "homeReject: rejectionButton not found on home card — skipping pre-reject")
+              SparkLogger.w(TAG, "homeReject: rejectionButton not found — skipping pre-reject")
               return false
           }
 
           val reason = buildList {
-              if (belowHourly) add("${String.format("%.2f", hourlyRate)}/hr < floor ${String.format("%.2f", hourlyFloor)}/hr")
-              if (belowTotal)  add("total $${String.format("%.2f", total)} < floor $${String.format("%.2f", totalFloor)}")
+              if (belowHourly) add("$rateStr/hr < floor $rFloor/hr")
+              if (belowTotal)  add("total \$$totalStr < floor \$$tFloor")
           }.joinToString(", ")
 
-          SparkLogger.i(TAG, "homeReject: PRE-REJECT at home card — $reason")
-          broadcastStatus("✗ Pre-rejected — $reason")
+          SparkLogger.i(TAG, "homeReject: PRE-REJECT — $reason")
+          broadcastStatus("\u2717 Pre-rejected — $reason")
 
           tapNode(rejectBtn)
           rejectBtn.recycle()
@@ -903,13 +922,13 @@ class SparkAccessibilityService : AccessibilityService() {
             } else {
                   // Proactively re-attempt rather than waiting passively for the next event —
                   // detail fields can take 100–300ms to populate after the screen appears.
-                  SparkLogger.w(TAG, "scrapeAndRecord: detail not ready — retrying in 150ms (attempt $scrapeRetries/$MAX_SCRAPE_RETRIES)")
+                  SparkLogger.w(TAG, "scrapeAndRecord: detail not ready — retrying in 75ms (attempt $scrapeRetries/$MAX_SCRAPE_RETRIES)")
                   mainHandler.postDelayed({
                       if (state == State.TAPPING_OFFER_CARD || state == State.IDLE) {
                           val r = rootInActiveWindow ?: return@postDelayed
                           try { handleEvent(r) } finally { r.recycle() }
                       }
-                  }, 150)
+                  }, 75)
               }
             return
         }
@@ -993,38 +1012,84 @@ class SparkAccessibilityService : AccessibilityService() {
             broadcastStatus("✓ Offer meets criteria! Accepting in ${acceptDelay}ms…")
             state = State.ACCEPTING
             scheduleAcceptingTimeout()
-            // tapHandler runs on AaaDisTapThread — bypasses Samsung main-Handler throttling.
-            // All state mutations are posted back to mainHandler so they stay on the main thread.
-            tapHandler.postDelayed({
-                if (state == State.ACCEPTING) {
-                    SparkLogger.i(TAG, "ACCEPTING: tapping accept button on detail screen")
-                    val tapped = tryAcceptOnDetailScreen()
+            if (acceptDelay == 0L) {
+                // Zero-delay: tap immediately on the current (main) thread — avoids two handler hops.
+                SparkLogger.i(TAG, "ACCEPTING: zero-delay — tapping accept inline on main thread")
+                val tapped = tryAcceptOnDetailScreen()
+                if (tapped) {
+                    SparkLogger.i(TAG, "ACCEPTING: accept tapped — watching for Start Trip confirmation")
+                    broadcastStatus("Accept tapped — confirming…")
+                    cancelAcceptingTimeout()
+                    stuckOtherSinceMs = 0L
+                    state = State.CONFIRMING_ACCEPT
+                    scheduleConfirmAcceptTimeout()
+                } else {
+                    // Accept button not found — detail screen may still be loading or button
+                    // ID changed.  Schedule a 200ms active retry via tapHandler rather than
+                    // waiting passively for an accessibility event — the button sometimes
+                    // appears silently (no new event fires on Samsung).
+                    SparkLogger.w(TAG, "ACCEPTING: accept button not found — scheduling 200ms retry")
+                    broadcastStatus("Accept button not found — retrying…")
+                    tapHandler.postDelayed({
+                    if (state == State.ACCEPTING) {
+                    val retapped = tryAcceptOnDetailScreen()
                     mainHandler.post {
-                        if (state == State.ACCEPTING) {
-                            if (tapped) {
+                    if (state == State.ACCEPTING && retapped) {
+                    SparkLogger.i(TAG, "ACCEPTING: accept tapped on retry")
+                    broadcastStatus("Accept tapped — confirming…")
+                    cancelAcceptingTimeout()
+                    stuckOtherSinceMs = 0L
+                    state = State.CONFIRMING_ACCEPT
+                    scheduleConfirmAcceptTimeout()
+                    }
+                    }
+                    }
+                    }, 200)
+                }
+            } else {
+                // Non-zero delay: dispatch to tapHandler (AaaDisTapThread) to bypass Samsung
+                // main-Handler throttling.  State mutations are posted back to mainHandler.
+                tapHandler.postDelayed({
+                    if (state == State.ACCEPTING) {
+                        SparkLogger.i(TAG, "ACCEPTING: tapping accept button on detail screen")
+                        val tapped = tryAcceptOnDetailScreen()
+                        mainHandler.post {
+                            if (state == State.ACCEPTING) {
+                                if (tapped) {
                                 SparkLogger.i(TAG, "ACCEPTING: accept tapped — watching for Start Trip confirmation")
                                 broadcastStatus("Accept tapped — confirming…")
                                 cancelAcceptingTimeout()
                                 stuckOtherSinceMs = 0L
                                 state = State.CONFIRMING_ACCEPT
                                 scheduleConfirmAcceptTimeout()
-                            } else {
+                                } else {
                                 // Accept button not found — detail screen may still be loading or button
-                                // ID changed.  Log what IS on screen and stay ACCEPTING so the retry
-                                // loop (via accessibility events on DETAIL) will try again in
-                                // REJECT_DETAIL_RETRY_MS.  Do NOT fall back to reject — the criteria
-                                // said accept, so we keep trying until timeout.
-                                SparkLogger.w(TAG, "ACCEPTING: accept button not found on detail screen — staying ACCEPTING, will retry via events")
+                                // ID changed.  Schedule a 200ms active retry via tapHandler rather than
+                                // waiting passively for an accessibility event — the button sometimes
+                                // appears silently (no new event fires on Samsung).
+                                SparkLogger.w(TAG, "ACCEPTING: accept button not found — scheduling 200ms retry")
                                 broadcastStatus("Accept button not found — retrying…")
-                                val debugRoot = rootInActiveWindow
-                                if (debugRoot != null) {
-                                    debugRoot.recycle()
+                                tapHandler.postDelayed({
+                                if (state == State.ACCEPTING) {
+                                val retapped = tryAcceptOnDetailScreen()
+                                mainHandler.post {
+                                if (state == State.ACCEPTING && retapped) {
+                                SparkLogger.i(TAG, "ACCEPTING: accept tapped on retry")
+                                broadcastStatus("Accept tapped — confirming…")
+                                cancelAcceptingTimeout()
+                                stuckOtherSinceMs = 0L
+                                state = State.CONFIRMING_ACCEPT
+                                scheduleConfirmAcceptTimeout()
+                                }
+                                }
+                                }
+                                }, 200)
                                 }
                             }
                         }
                     }
-                }
-            }, acceptDelay)
+                }, acceptDelay)
+            }
         } else {
             // ── REJECT ─────────────────────────────────────────────────────────
             // State = REJECTING.  The reject button is tapped after a random human-like
