@@ -157,6 +157,12 @@ class SparkAccessibilityService : AccessibilityService() {
 
     private var lastTapTime        = 0L
 
+    // Tap verification — after each home-screen gesture, confirm the screen actually changed
+    private var tapVerifyRetryCount = 0
+    private val MAX_TAP_VERIFY_RETRIES = 2
+    private val TAP_VERIFY_DELAY_MS    = 500L
+    private var tapVerifyRunnable: Runnable? = null
+
     // Chime state — sequence guard prevents overlapping chime chains
     private var chimeSeq      = 0
     private var chimeRingtone: android.media.Ringtone? = null
@@ -360,6 +366,7 @@ class SparkAccessibilityService : AccessibilityService() {
                             return
                         }
                         cancelTappingCardTimeout()
+                        cancelTapVerify()
                         SparkLogger.i(TAG, "TAPPING_OFFER_CARD: DETAIL screen — scraping offer")
                         scrapeAndRecord(root)
                     }
@@ -679,6 +686,18 @@ class SparkAccessibilityService : AccessibilityService() {
         val tapped = tapNode(tapTarget)
         SparkLogger.i(TAG, "HOME_OFFER: gesture tap dispatched=$tapped")
         tapTarget.recycle()
+        scheduleTapVerify(AppScreen.HOME_OFFER) {
+            if (state != State.TAPPING_OFFER_CARD) return@scheduleTapVerify
+            val freshRoot = rootInActiveWindow ?: return@scheduleTapVerify
+            try {
+                val newTarget = findOfferCardTapTarget(freshRoot)
+                if (newTarget != null) {
+                    SparkLogger.w(TAG, "tapVerify: retapping offer card (retry $tapVerifyRetryCount)")
+                    tapNode(newTarget)
+                    newTarget.recycle()
+                }
+            } finally { freshRoot.recycle() }
+        }
         // Stay in TAPPING_OFFER_CARD — the 15-second timeout handles the stuck case,
         // and the DETAIL screen appearing triggers scrapeAndRecord directly.
     }
@@ -786,6 +805,18 @@ class SparkAccessibilityService : AccessibilityService() {
 
         val tapped = tapNode(acceptBtn)
         acceptBtn.recycle()
+        scheduleTapVerify(AppScreen.HOME_OFFER) {
+            if (state != State.CONFIRMING_ACCEPT) return@scheduleTapVerify
+            val freshRoot = rootInActiveWindow ?: return@scheduleTapVerify
+            try {
+                val freshBtn = findNodeById(freshRoot, ID_ACCEPTANCE_BUTTON_HOME)
+                if (freshBtn != null) {
+                    SparkLogger.w(TAG, "tapVerify: retapping acceptanceButton (retry $tapVerifyRetryCount)")
+                    tapNode(freshBtn)
+                    freshBtn.recycle()
+                }
+            } finally { freshRoot.recycle() }
+        }
         SparkLogger.i(TAG, "quickMode: gesture tap dispatched=$tapped")
 
         state = State.CONFIRMING_ACCEPT
@@ -846,6 +877,18 @@ class SparkAccessibilityService : AccessibilityService() {
 
           tapNode(rejectBtn)
           rejectBtn.recycle()
+          scheduleTapVerify(AppScreen.HOME_OFFER) {
+              if (state != State.REJECTING) return@scheduleTapVerify
+              val freshRoot = rootInActiveWindow ?: return@scheduleTapVerify
+              try {
+                  val freshBtn = findNodeById(freshRoot, ID_REJECTION_BUTTON_HOME)
+                  if (freshBtn != null) {
+                      SparkLogger.w(TAG, "tapVerify: retapping rejectionButton (retry $tapVerifyRetryCount)")
+                      tapNode(freshBtn)
+                      freshBtn.recycle()
+                  }
+              } finally { freshRoot.recycle() }
+          }
 
           CsvLogger.appendHomeCard(total, distMi, timMin, "FAIL")
           lastOfferCsvWritten = true
@@ -1387,6 +1430,51 @@ class SparkAccessibilityService : AccessibilityService() {
     private fun cancelTappingCardTimeout() {
         tappingCardTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
         tappingCardTimeoutRunnable = null
+    }
+
+    private fun cancelTapVerify() {
+        tapVerifyRunnable?.let { mainHandler.removeCallbacks(it) }
+        tapVerifyRunnable = null
+        tapVerifyRetryCount = 0
+    }
+
+    /**
+     * After a gesture tap on the home screen, schedules a check [TAP_VERIFY_DELAY_MS] ms later.
+     * If the screen is still [expectedFrom], the [retapAction] lambda fires and the check
+     * reschedules — up to [MAX_TAP_VERIFY_RETRIES] times.
+     * Guards inside [retapAction] should verify the state has not already moved on.
+     */
+    private fun scheduleTapVerify(expectedFrom: AppScreen, retapAction: () -> Unit) {
+        cancelTapVerify()
+        fun check() {
+            val r = Runnable {
+                tapVerifyRunnable = null
+                if (!isMonitoring) return@Runnable
+                val freshRoot = rootInActiveWindow ?: return@Runnable
+                try {
+                    val current = detectScreen(freshRoot)
+                    if (current != expectedFrom) {
+                        SparkLogger.i(TAG, "tapVerify: screen left $expectedFrom ($current) — OK")
+                        tapVerifyRetryCount = 0
+                        return@Runnable
+                    }
+                    tapVerifyRetryCount++
+                    if (tapVerifyRetryCount > MAX_TAP_VERIFY_RETRIES) {
+                        SparkLogger.w(TAG, "tapVerify: screen still $expectedFrom after $MAX_TAP_VERIFY_RETRIES retries — giving up")
+                        tapVerifyRetryCount = 0
+                        return@Runnable
+                    }
+                    SparkLogger.w(TAG, "tapVerify: screen still $expectedFrom — retry $tapVerifyRetryCount/$MAX_TAP_VERIFY_RETRIES")
+                    retapAction()
+                    check()
+                } finally {
+                    freshRoot.recycle()
+                }
+            }
+            tapVerifyRunnable = r
+            mainHandler.postDelayed(r, TAP_VERIFY_DELAY_MS)
+        }
+        check()
     }
 
     /**
