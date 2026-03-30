@@ -106,6 +106,7 @@ class SparkAccessibilityService : AccessibilityService() {
         private const val TAPPING_CARD_TIMEOUT_MS  = 15_000L    // give up on detail opening after 15 s
         private const val AUTO_REJECT_TIMEOUT_MS   = 30_000L    // give up on reject flow after 30 s
         private const val REJECT_DETAIL_RETRY_MS   = 3_000L     // retry reject/back every 3 s on detail
+        private const val ID_OFFER_FORECAST_CHART = "$SPARK_PACKAGE:id/offerForecastBarChart"
 
         // Start Trip screen — detected by text since IDs are unconfirmed
         private val START_TRIP_TEXTS = listOf("start trip", "start your trip", "begin trip")
@@ -381,7 +382,20 @@ class SparkAccessibilityService : AccessibilityService() {
                             lastWaitingLogTime = now
                         }
                     }
-                    else -> { /* transitioning — stay */ }
+                    else -> {
+                        // If we accidentally landed on the popular-times/forecast overlay
+                        // (triggered by a mis-aimed gesture tap hitting busyHoursIcon or infoIcon),
+                        // press Back immediately and reset to IDLE so the offer is re-evaluated
+                        // as soon as the home screen returns — avoids the full 15-second timeout.
+                        if (hasNodeWithId(root, ID_OFFER_FORECAST_CHART)) {
+                            SparkLogger.w(TAG, "TAPPING_OFFER_CARD: landed on popular-times overlay — pressing Back, resetting IDLE")
+                            performGlobalAction(GLOBAL_ACTION_BACK)
+                            cancelTappingCardTimeout()
+                            cancelTapVerify()
+                            state = State.IDLE
+                        }
+                        // otherwise just a brief transition — stay
+                    }
                 }
             }
 
