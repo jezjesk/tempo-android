@@ -576,7 +576,10 @@ class SparkAccessibilityService : AccessibilityService() {
                             return
                         }
                         // Unknown OTHER screen — dump for diagnosis
-                        SparkLogger.w(TAG, "REJECTING: unrecognised OTHER screen — staying REJECTING")
+                        // Unknown OTHER screen — sheet is gone; reset flags so next offer's sheet is handled fresh.
+                        rejectConfirmSheetFirstSeenMs = 0L
+                        lastRejectConfirmTapMs         = 0L
+                        SparkLogger.w(TAG, "REJECTING: unrecognised OTHER screen — flags reset, staying REJECTING")
                     }
                     AppScreen.HOME_SEARCHING -> {
                         // Offer is gone — either rejected successfully or expired
@@ -593,6 +596,10 @@ class SparkAccessibilityService : AccessibilityService() {
                         // while the home card is still visible but animating away.  Resetting to
                         // IDLE here caused the reject-confirmation sheet to appear unhandled.
                         // Stay in REJECTING — the sheet will arrive as an OTHER screen shortly.
+                        // Reset confirmation-sheet flags so a *second* offer's sheet is treated
+                        // as a fresh arrival — stale flags from offer 1 would block the offer 2 tap.
+                        rejectConfirmSheetFirstSeenMs = 0L
+                        lastRejectConfirmTapMs         = 0L
                         SparkLogger.d(TAG, "REJECTING: HOME_OFFER content event — staying REJECTING, waiting for confirmation sheet")
                     }
                 }
