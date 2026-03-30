@@ -61,13 +61,11 @@ class SparkAccessibilityService : AccessibilityService() {
         private const val ID_HOME_LAYOUT         = "$SPARK_PACKAGE:id/activityHomeWithMapLayout"
         private const val ID_BOTTOM_SHEET        = "$SPARK_PACKAGE:id/bottom_sheet_home_with_map"
         private const val ID_RECYCLER            = "$SPARK_PACKAGE:id/homeBottomSheetRecyclerView"
-        private const val ID_SEARCHING           = "$SPARK_PACKAGE:id/tvSearchOffers"
         // Detail screen — confirmed from log dump 2026-03-24
         private const val ID_ESTIMATED_LABEL     = "$SPARK_PACKAGE:id/estimatedLabelView"
         private const val ID_ESTIMATED_VALUE     = "$SPARK_PACKAGE:id/estimatedValueView"
         private const val ID_ESTIMATE_VALUE_HOME = "$SPARK_PACKAGE:id/estimateValue"  // home card estimate (not detail screen)
         private const val ID_TIPS_VIEW           = "$SPARK_PACKAGE:id/tipsView"
-        private const val ID_TRIP_SUMMARY        = "$SPARK_PACKAGE:id/tripSummary"
         private const val ID_STOP_COUNT          = "$SPARK_PACKAGE:id/stopCount"
         private const val ID_DISTANCE            = "$SPARK_PACKAGE:id/distance"
         private const val ID_TIME                = "$SPARK_PACKAGE:id/time"
@@ -88,7 +86,6 @@ class SparkAccessibilityService : AccessibilityService() {
         private const val ID_GET_IT_BUTTON          = "${SPARK_PACKAGE}:id/getItButton"
         // Rejection confirmation bottom sheet — confirmed from log dump 2026-03-24
         private const val ID_REJECT_CONFIRM_BUTTON  = "$SPARK_PACKAGE:id/rejectThisOfferButton"
-        private const val ID_KEEP_OFFER_BUTTON      = "$SPARK_PACKAGE:id/keepThisOfferButton"
         // Active trip home card — ctaButton ("START TRIP") replaces accept/reject buttons
         private const val ID_REJECTION_BUTTON_HOME = "$SPARK_PACKAGE:id/rejectionButton"
         private const val ID_CTA_BUTTON            = "$SPARK_PACKAGE:id/ctaButton"
@@ -2008,32 +2005,6 @@ class SparkAccessibilityService : AccessibilityService() {
         if (titles.any { text -> JFY_KEYWORDS.any { text.contains(it, ignoreCase = true) } }) return "JFY"
         if (chips.any  { text -> JFY_KEYWORDS.any { text.contains(it, ignoreCase = true) } }) return "JFY"
         return "FCFS"
-    }
-
-    /**
-     * Scans all valueView nodes on screen for a dollar amount different from [excludeAmount].
-     * Used as a fallback when tipsView is absent — some offer types omit the tip container
-     * but may still show the tip amount in a generic valueView.
-     */
-    private fun findTipAmongValueViews(root: AccessibilityNodeInfo, excludeAmount: Double?): Double? {
-        val nodes = try {
-            root.findAccessibilityNodeInfosByViewId(ID_VALUE_VIEW)
-        } catch (e: Exception) { null } ?: return null
-
-        var result: Double? = null
-        for (node in nodes) {
-            val text = node.text?.toString() ?: ""
-            val amount = extractDollar(text)
-            SparkLogger.d(TAG, "findTipAmongValueViews: text='$text' amount=$amount exclude=$excludeAmount")
-            if (amount != null && amount != excludeAmount) {
-                result = amount
-                node.recycle()
-                break
-            }
-            node.recycle()
-        }
-        nodes.forEach { try { it.recycle() } catch (_: Exception) {} }
-        return result
     }
 
     /**
