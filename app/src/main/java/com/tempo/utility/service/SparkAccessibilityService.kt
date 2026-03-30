@@ -213,6 +213,7 @@ class SparkAccessibilityService : AccessibilityService() {
             registerReceiver(monitoringReceiver, filter)
         }
         broadcastStatus("Tempo connected — open Spark Driver to begin monitoring")
+        startWatchdog()
     }
 
     override fun onInterrupt() {
@@ -222,6 +223,7 @@ class SparkAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         SparkLogger.i(TAG, "onDestroy — service stopping")
+        stopWatchdog()
         mainHandler.removeCallbacksAndMessages(null)
         tapHandlerThread.quitSafely()
         tappingCardTimeoutRunnable = null
@@ -1509,6 +1511,95 @@ class SparkAccessibilityService : AccessibilityService() {
     private fun cancelAutoRejectTimeout() {
         autoRejectTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
         autoRejectTimeoutRunnable = null
+    }
+
+    // ── Watchdog ──────────────────────────────────────────────────────────────
+    /**
+     * Fires once per [WATCHDOG_INTERVAL_MS] on the main thread.
+     * Acts only on unambiguous stuck states that the event-driven path may have missed
+     * (e.g. because Android dropped an accessibility event under memory pressure).
+     *
+     * Actions taken:
+     *  • REJECTING + confirmation sheet visible  → tap rejectThisOfferButton directly
+     *  • REJECTING + HOME_SEARCHING              → reset to IDLE (offer already gone)
+     *  • IDLE + HOME_OFFER visible               → re-fire offer handler (missed event)
+     *  • IDLE + orphaned confirmation sheet      → tap rejectThisOfferButton
+     */
+    private val WATCHDOG_INTERVAL_MS = 60_000L
+    private var watchdogRunnable: Runnable? = null
+
+    private fun startWatchdog() {
+        stopWatchdog()
+        fun schedule() {
+            val r = Runnable {
+                watchdogRunnable = null
+                if (!isMonitoring) { schedule(); return@Runnable }
+                val root = rootInActiveWindow
+                if (root != null) {
+                    SparkLogger.i(TAG, "watchdog: firing — state=$state")
+                    try { runWatchdogCheck(root) } finally { root.recycle() }
+                } else {
+                    SparkLogger.d(TAG, "watchdog: rootInActiveWindow null — no Spark window active")
+                }
+                schedule()
+            }
+            watchdogRunnable = r
+            mainHandler.postDelayed(r, WATCHDOG_INTERVAL_MS)
+        }
+        schedule()
+    }
+
+    private fun stopWatchdog() {
+        watchdogRunnable?.let { mainHandler.removeCallbacks(it) }
+        watchdogRunnable = null
+    }
+
+    private fun runWatchdogCheck(root: AccessibilityNodeInfo) {
+        val screen = detectScreen(root)
+        SparkLogger.i(TAG, "watchdog: screen=$screen")
+        when {
+            // REJECTING + confirmation sheet visible — tap directly, bypassing stale-flag guards
+            state == State.REJECTING && screen == AppScreen.OTHER -> {
+                val btn = findNodeById(root, ID_REJECT_CONFIRM_BUTTON)
+                if (btn != null) {
+                    val now = System.currentTimeMillis()
+                    SparkLogger.w(TAG, "watchdog: REJECTING + confirm sheet stuck — tapping rejectThisOfferButton")
+                    tapNode(btn)
+                    btn.recycle()
+                    rejectConfirmSheetFirstSeenMs = now
+                    lastRejectConfirmTapMs        = now
+                } else {
+                    SparkLogger.d(TAG, "watchdog: REJECTING + OTHER but no confirm button — nothing to do")
+                }
+            }
+            // REJECTING + HOME_SEARCHING — offer is gone, reset
+            state == State.REJECTING && screen == AppScreen.HOME_SEARCHING -> {
+                SparkLogger.w(TAG, "watchdog: REJECTING + HOME_SEARCHING — offer gone, resetting IDLE")
+                cancelAutoRejectTimeout()
+                if (lastOfferCsvWritten) CsvLogger.updateLastActionResult("REJECTED")
+                rejectConfirmSheetFirstSeenMs = 0L
+                lastRejectConfirmTapMs         = 0L
+                state = State.IDLE
+                broadcastStatus("Offer rejected — watching for next offer")
+            }
+            // IDLE + HOME_OFFER — event was missed, re-fire the offer handler
+            state == State.IDLE && screen == AppScreen.HOME_OFFER -> {
+                SparkLogger.w(TAG, "watchdog: IDLE + HOME_OFFER — missed event, re-firing offer handler")
+                handleOfferOnHomeScreen(root)
+            }
+            // IDLE + orphaned confirmation sheet
+            state == State.IDLE && screen == AppScreen.OTHER -> {
+                val btn = findNodeById(root, ID_REJECT_CONFIRM_BUTTON)
+                if (btn != null) {
+                    SparkLogger.w(TAG, "watchdog: IDLE + orphaned confirm sheet — tapping rejectThisOfferButton")
+                    tapNode(btn)
+                    btn.recycle()
+                } else {
+                    SparkLogger.d(TAG, "watchdog: IDLE + OTHER, no confirm button — nothing to do")
+                }
+            }
+            else -> SparkLogger.d(TAG, "watchdog: state=$state screen=$screen — nothing to do")
+        }
     }
 
     // ── Acceptance horn ───────────────────────────────────────────────────────
