@@ -2157,7 +2157,6 @@ class SparkAccessibilityService : AccessibilityService() {
             null
         }
     }
-    }
 
     private fun findFirstClickable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isClickable) return node
