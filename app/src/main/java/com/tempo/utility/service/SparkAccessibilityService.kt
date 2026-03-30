@@ -235,6 +235,7 @@ class SparkAccessibilityService : AccessibilityService() {
         autoRejectTimeoutRunnable = null
         confirmAcceptTimeoutRunnable = null
         try { unregisterReceiver(monitoringReceiver) } catch (_: IllegalArgumentException) { }
+        SparkLogger.shutdown()
     }
 
     // ──────────────────────────────────────────────────────────────────────────
