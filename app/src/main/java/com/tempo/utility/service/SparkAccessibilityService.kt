@@ -225,6 +225,9 @@ class SparkAccessibilityService : AccessibilityService() {
         super.onDestroy()
         SparkLogger.i(TAG, "onDestroy — service stopping")
         stopWatchdog()
+        // Safety-restore chime volume if service is destroyed mid-sequence
+        chimeAm?.let { if (chimeSavedVol >= 0) it.setStreamVolume(AudioManager.STREAM_ALARM, chimeSavedVol, 0) }
+        chimeSavedVol = -1; chimeAm = null
         mainHandler.removeCallbacksAndMessages(null)
         tapHandlerThread.quitSafely()
         tappingCardTimeoutRunnable = null
@@ -1026,13 +1029,14 @@ class SparkAccessibilityService : AccessibilityService() {
             } else {
                   // Proactively re-attempt rather than waiting passively for the next event —
                   // detail fields can take 100–300ms to populate after the screen appears.
-                  SparkLogger.w(TAG, "scrapeAndRecord: detail not ready — retrying in 75ms (attempt $scrapeRetries/$MAX_SCRAPE_RETRIES)")
+                  val retryDelayMs = when (scrapeRetries) { 1 -> 75L; 2 -> 150L; else -> 300L }
+                  SparkLogger.w(TAG, "scrapeAndRecord: detail not ready — retrying in ${retryDelayMs}ms (attempt $scrapeRetries/$MAX_SCRAPE_RETRIES)")
                   mainHandler.postDelayed({
                       if (state == State.TAPPING_OFFER_CARD || state == State.IDLE) {
                           val r = rootInActiveWindow ?: return@postDelayed
                           try { handleEvent(r) } finally { r.recycle() }
                       }
-                  }, 75)
+                  }, retryDelayMs)
               }
             return
         }
@@ -2129,7 +2133,10 @@ class SparkAccessibilityService : AccessibilityService() {
 
     private fun findNodeById(root: AccessibilityNodeInfo, resourceId: String): AccessibilityNodeInfo? {
         return try {
-            root.findAccessibilityNodeInfosByViewId(resourceId)?.firstOrNull()
+            val nodes = root.findAccessibilityNodeInfosByViewId(resourceId) ?: return null
+            val first = nodes.firstOrNull()
+            nodes.drop(1).forEach { it.recycle() }   // recycle list extras to prevent leaks
+            first
         } catch (e: Exception) {
             SparkLogger.e(TAG, "findNodeById($resourceId) threw", e)
             null
@@ -2138,14 +2145,17 @@ class SparkAccessibilityService : AccessibilityService() {
 
     private fun findTextByNodeId(root: AccessibilityNodeInfo, resourceId: String): String? {
         return try {
-            root.findAccessibilityNodeInfosByViewId(resourceId)
-                ?.firstOrNull()
-                ?.also { it.recycle() }
-                ?.text?.toString()
+            val nodes = root.findAccessibilityNodeInfosByViewId(resourceId)
+            val node  = nodes?.firstOrNull() ?: return null
+            nodes.drop(1).forEach { it.recycle() }   // recycle extras before reading
+            val text = node.text?.toString()
+            node.recycle()
+            text
         } catch (e: Exception) {
             SparkLogger.e(TAG, "findTextByNodeId($resourceId) threw", e)
             null
         }
+    }
     }
 
     private fun findFirstClickable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
